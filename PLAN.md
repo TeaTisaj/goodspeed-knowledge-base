@@ -273,10 +273,9 @@ Framework-free on purpose: a reviewer can read the interface without NestJS in t
 ### M4 — API: documents + ingestion (1d)
 - [ ] `SupabaseModule`: request-scoped user client (RLS) + admin client (worker only)
 - [ ] Auth guard verifying Supabase JWTs locally with `jose` — no shared secret, survives key
-      rotation. Must handle **both** algorithms: Supabase CLI ≥2.71.1 defaults local projects to
-      **ES256 (asymmetric, JWKS)**, while older local projects and some self-hosted setups use the
-      legacy **HS256** shared secret. `config.toml` can pin `auth.jwt_algorithm`. Verify which the
-      pinned CLI produces in M0 rather than assuming.
+      rotation. **Measured 2026-09-23: local CLI 2.117.0 issues ES256**, JWKS serves a P-256 key and
+      the token `kid` matches it, so JWKS verification works locally and in production unchanged.
+      Keep an HS256 fallback path for self-hosted setups pinning `auth.jwt_algorithm`.
 - [ ] Document CRUD with Zod DTOs from `packages/contracts` — title, content, optional tags,
       timestamps (task.md §3)
 - [ ] pg-boss producer; worker module with dual-mode bootstrap (`main.ts` / `main.worker.ts`)
@@ -369,7 +368,7 @@ CI: lint → typecheck → unit → (Supabase in Docker) migrations + integratio
 |---|---|---|---|
 | 1 | ~~Node too old for `@nestjs/schematics@12`~~ | **RESOLVED 2026-09-23** | fnm 1.39.0 installed; Node **24.21.0** is now the default, pnpm **12.5.1** via corepack. Still ship `.nvmrc` + `engines` + a setup preflight so *reviewers* hit a clear message rather than a stack trace. |
 | 2 | TypeScript 7 is `latest` on npm; installing it breaks `nest build` and typescript-eslint | High | Pin `typescript@6.0.3` explicitly at the root. Document why in DECISIONS.md — knowing the bleeding edge exists and declining it is the point. |
-| 3 | Local Supabase may ship pgvector < 0.8 → no iterative scan, so RLS-filtered vector search can under-return rows | Medium | **Verify in M0.** If old: over-fetch 3x before filtering and note the constraint. Do not assume the version. |
+| 3 | ~~Local Supabase may ship pgvector < 0.8~~ | **RESOLVED 2026-09-23** | Measured: Postgres **17.6**, pgvector **0.8.2**, `hnsw.iterative_scan` settable, `halfvec` present. No over-fetch workaround needed. See DECISIONS.md D0. |
 | 4 | Vitest + NestJS 12 ESM + decorator metadata friction | Medium | Timeboxed 2h spike in M0. Fall back to Jest+SWC. Don't discover this in M4. |
 | 5 | SSE buffering — streaming works in dev, arrives as one blob in prod | Medium | Disable compression on the stream route, `X-Accel-Buffering: no`, flush per event, verify in a real browser not just curl. |
 | 6 | Scope overrun from optional milestones | Medium | Hard gate: M0–M7 must be shippable and committed before M8 starts. Each optional item is its own branch and commit series. Dropping workspaces cut this risk from high to medium. |
@@ -377,9 +376,9 @@ CI: lint → typecheck → unit → (Supabase in Docker) migrations + integratio
 | 8 | Ollama's OpenAI compatibility is officially experimental and subject to breaking changes | Medium | Ship the preset, and state plainly in the README which providers were actually tested. Honesty here reads as senior; an untested five-provider claim reads as careless. |
 | 9 | Next 16 removed `next lint`; a copied turbo config silently lints nothing | Low | Call eslint directly in the lint task; assert it fails on a deliberate violation once. |
 | 10 | Docker image pull is slow on the reviewer's machine | Low | Document the one-time cost in the README; the demo URL is the escape hatch. |
-| 11 | **Seeding demo users locally.** Creating auth users is on the critical path for one-command setup, and Supabase's local ES256 switch produced a known class of `signing method HS256 is invalid` failures when creating users (CLI issue #4820, filed Feb 2026 against 2.76.3; fix status unconfirmed on 2.117.0). | Medium | Seed users from a Node script via the **Auth Admin API with the service-role key**, not Studio and not raw `auth.users` inserts (which are brittle across Supabase versions). Verify on the pinned CLI in M0; fall back to pinning `auth.jwt_algorithm = "HS256"` in `config.toml` if needed. |
+| 11 | ~~Auth Admin API user creation broken locally (CLI #4820)~~ | **RESOLVED 2026-09-23** | Does not reproduce on CLI 2.117.0 — created and deleted a user via the Admin API successfully. Seeding uses the Admin API, not raw `auth.users` inserts. See DECISIONS.md D0. |
 | 12 | **pg-boss over a transaction-mode pooler silently fails to pick up jobs.** pg-boss uses LISTEN/NOTIFY, which is session-scoped. Bites on deploy (M10), not locally. | Medium (M10 only) | Worker connects on a **session-mode or direct DSN** (Supabase port 5432), never the transaction pooler (6543). Keep it a separate env var from the app's connection string so the distinction is explicit rather than accidental. |
-| 13 | E2E signup blocks on email confirmation | Low | `supabase/config.toml` disables confirmations locally; the Playwright test asserts the flow rather than reading mail. Verify the flag is actually set in M1. |
+| 13 | ~~E2E signup blocks on email confirmation~~ | **RESOLVED 2026-09-23** | `enable_confirmations = false` confirmed in the generated `config.toml`. Signup works offline; no mail server needed. |
 
 ---
 
