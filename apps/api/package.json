@@ -21,7 +21,12 @@
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "zod": "4.6.5",
-    "@supabase/supabase-js": "2.117.0"
+    "@supabase/supabase-js": "2.117.0",
+    "@kb/contracts": "workspace:*",
+    "@kb/ai": "workspace:*",
+    "@kb/rag": "workspace:*",
+    "jose": "6.1.0",
+    "pg-boss": "12.33.6"
   },
   "devDependencies": {
     "@kb/eslint-config": "workspace:*",

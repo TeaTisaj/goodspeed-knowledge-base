@@ -16,3 +16,4 @@ minimumReleaseAgeExclude:
   - '@supabase/storage-js@2.117.0'
   - '@supabase/supabase-js@2.117.0'
   - openai@7.22.0
+  - pg-boss@12.33.6
