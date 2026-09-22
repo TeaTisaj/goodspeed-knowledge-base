@@ -8,8 +8,10 @@
     "start": "node dist/main.js",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --project unit",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --project integration",
+    "test:all": "vitest run"
   },
   "dependencies": {
     "@nestjs/common": "12.0.4",
@@ -18,7 +20,8 @@
     "@nestjs/throttler": "6.7.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "@supabase/supabase-js": "2.117.0"
   },
   "devDependencies": {
     "@kb/eslint-config": "workspace:*",
