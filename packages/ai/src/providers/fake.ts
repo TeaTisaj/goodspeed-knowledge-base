@@ -1,0 +1,212 @@
+import {
+  type ChatCapabilities,
+  type ChatProvider,
+  type ChatRequest,
+  type ChatResult,
+  type ChatStreamEvent,
+  type EmbedRequest,
+  type EmbedResult,
+  type EmbeddingCapabilities,
+  type EmbeddingProvider,
+} from '../types.js';
+
+/**
+ * Deterministic, offline provider. No credentials, no network.
+ *
+ * It has three jobs, and the third is what shapes the design:
+ *   1. the app runs for a reviewer who has no API keys,
+ *   2. it is the test double for every unit test,
+ *   3. CI runs the retrieval eval without secrets.
+ *
+ * Because of (1) and (3), embeddings cannot be random. A hash-to-random-vector
+ * fake produces vectors with no relationship to the text, so retrieval returns
+ * arbitrary chunks — the demo looks broken and the eval measures noise.
+ *
+ * Instead this is a **hashing vectorizer**: tokens are hashed into buckets and
+ * the vector is L2-normalised, so cosine similarity approximates lexical
+ * overlap. It is not semantic — "car" and "automobile" stay unrelated — but it
+ * is a real, monotonic similarity signal, which is enough for the demo to
+ * behave sensibly and for the eval to produce a meaningful baseline.
+ */
+
+const FNV_OFFSET = 2166136261;
+const FNV_PRIME = 16777619;
+
+function hash32(s: string): number {
+  let h = FNV_OFFSET;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, FNV_PRIME);
+  }
+  return h >>> 0;
+}
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length > 1);
+}
+
+/** Hashing vectorizer with sublinear term-frequency scaling. */
+export function hashingVector(text: string, dims: number): number[] {
+  const v = new Array<number>(dims).fill(0);
+  const tokens = tokenize(text);
+
+  for (const token of tokens) {
+    const h = hash32(token);
+    const bucket = h % dims;
+    // Signed hashing: halves collision bias by letting collisions cancel.
+    const sign = (h >>> 31) & 1 ? -1 : 1;
+    v[bucket] = (v[bucket] ?? 0) + sign;
+  }
+
+  // Sublinear scaling, so one repeated word cannot dominate the vector.
+  for (let i = 0; i < dims; i++) {
+    const x = v[i] ?? 0;
+    v[i] = x === 0 ? 0 : Math.sign(x) * (1 + Math.log(Math.abs(x)));
+  }
+
+  const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+  if (norm === 0) {
+    // Empty or stop-word-only text still needs a valid unit vector, or
+    // pgvector rejects the insert.
+    v[0] = 1;
+    return v;
+  }
+  return v.map((x) => x / norm);
+}
+
+export interface FakeChatOptions {
+  id?: string;
+  model?: string;
+  /** Delay between streamed tokens, so streaming UI can be exercised. */
+  streamDelayMs?: number;
+}
+
+export class FakeChatProvider implements ChatProvider {
+  readonly id: string;
+  readonly model: string;
+  readonly capabilities: ChatCapabilities = {
+    streaming: true,
+    toolCalls: false,
+    jsonMode: true,
+    streamingUsage: true,
+    maxContextTokens: 128_000,
+  };
+  private readonly streamDelayMs: number;
+
+  constructor(opts: FakeChatOptions = {}) {
+    this.id = opts.id ?? 'fake';
+    this.model = opts.model ?? 'fake-chat-v1';
+    this.streamDelayMs = opts.streamDelayMs ?? 0;
+  }
+
+  async chat(request: ChatRequest): Promise<ChatResult> {
+    const text = this.compose(request);
+    return {
+      text,
+      usage: this.estimateUsage(request, text),
+      finishReason: 'stop',
+      provider: { id: this.id, model: this.model },
+    };
+  }
+
+  async *streamChat(request: ChatRequest): AsyncIterable<ChatStreamEvent> {
+    const text = this.compose(request);
+    const parts = text.match(/\S+\s*/g) ?? [];
+
+    for (const part of parts) {
+      if (request.signal?.aborted) {
+        yield { type: 'done', finishReason: 'error' };
+        return;
+      }
+      yield { type: 'text', delta: part };
+      if (this.streamDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, this.streamDelayMs));
+      }
+    }
+
+    yield { type: 'usage', usage: this.estimateUsage(request, text) };
+    yield { type: 'done', finishReason: 'stop' };
+  }
+
+  /**
+   * Extractive, not generative: it answers from the retrieved context in the
+   * prompt. That keeps the demo honest — a citation always points at text the
+   * answer actually used — and keeps faithfulness trivially satisfiable so
+   * eval failures point at retrieval rather than at the fake.
+   */
+  private compose(request: ChatRequest): string {
+    const question = [...request.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+    const context = request.messages.find((m) => m.role === 'system')?.content ?? '';
+
+    const queryTerms = new Set(tokenize(question));
+    if (queryTerms.size === 0 || !context) {
+      return 'I could not find anything relevant in your documents to answer that.';
+    }
+
+    const sentences = context
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 30);
+
+    const scored = sentences
+      .map((s) => {
+        const terms = tokenize(s);
+        const overlap = terms.filter((t) => queryTerms.has(t)).length;
+        return { s, score: overlap / Math.sqrt(terms.length || 1) };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+
+    if (scored.length === 0) {
+      return 'I could not find anything relevant in your documents to answer that.';
+    }
+    return scored.map((x) => x.s).join(' ');
+  }
+
+  private estimateUsage(request: ChatRequest, output: string) {
+    // ~4 characters per token is close enough for a fake.
+    const promptChars = request.messages.reduce((n, m) => n + m.content.length, 0);
+    const promptTokens = Math.ceil(promptChars / 4);
+    const completionTokens = Math.ceil(output.length / 4);
+    return { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens };
+  }
+}
+
+export interface FakeEmbeddingOptions {
+  id?: string;
+  model?: string;
+  dimensions?: number;
+}
+
+export class FakeEmbeddingProvider implements EmbeddingProvider {
+  readonly id: string;
+  readonly model: string;
+  readonly capabilities: EmbeddingCapabilities;
+
+  constructor(opts: FakeEmbeddingOptions = {}) {
+    this.id = opts.id ?? 'fake';
+    this.model = opts.model ?? 'fake-embed-v1';
+    this.capabilities = {
+      dimensions: opts.dimensions ?? 1536,
+      maxBatchSize: 512,
+      maxInputTokens: 8192,
+      configurableDimensions: true,
+    };
+  }
+
+  async embed(request: EmbedRequest): Promise<EmbedResult> {
+    const dims = this.capabilities.dimensions;
+    const embeddings = request.texts.map((t) => hashingVector(t, dims));
+    const totalTokens = request.texts.reduce((n, t) => n + Math.ceil(t.length / 4), 0);
+    return {
+      embeddings,
+      usage: { promptTokens: totalTokens, totalTokens },
+      provider: { id: this.id, model: this.model },
+    };
+  }
+}
