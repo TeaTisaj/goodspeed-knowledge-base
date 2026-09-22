@@ -10,14 +10,14 @@ Environment facts are dated and were measured, not assumed.
 The plan refused to assume three things that could not be known without running the stack.
 Measured **2026-09-23** against Supabase CLI **2.117.0**.
 
-| Question | Answer | Consequence |
-|---|---|---|
-| Postgres version | **17.6** | — |
-| pgvector version | **0.8.2** | ≥0.8.0, so **iterative scan is available**; `set hnsw.iterative_scan = strict_order` verified settable. Matters because pgvector applies RLS *after* scanning the ANN index, so a filtered search can under-return rows without it. |
-| `halfvec` type | present | Escape hatch if we ever exceed the 2,000-dim HNSW ceiling for `vector`. Not needed at 1536. |
-| JWT algorithm | **ES256** (asymmetric, P-256) | JWKS at `/auth/v1/.well-known/jwks.json` serves the public key, and the `kid` in issued access tokens matches it. The auth guard verifies **locally via JWKS** — no shared secret, survives rotation. |
-| Auth Admin API user creation | **works** | [supabase/cli#4820](https://github.com/supabase/cli/issues/4820) (`signing method HS256 is invalid` on local user creation) does **not** reproduce on 2.117.0. Seeding demo users via the Admin API is safe, so we avoid brittle raw `auth.users` inserts. |
-| Email confirmation | disabled by default in `config.toml` | Signup works offline; the E2E test needs no mail server. |
+| Question                     | Answer                               | Consequence                                                                                                                                                                                                                                                |
+| ---------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres version             | **17.6**                             | —                                                                                                                                                                                                                                                          |
+| pgvector version             | **0.8.2**                            | ≥0.8.0, so **iterative scan is available**; `set hnsw.iterative_scan = strict_order` verified settable. Matters because pgvector applies RLS _after_ scanning the ANN index, so a filtered search can under-return rows without it.                        |
+| `halfvec` type               | present                              | Escape hatch if we ever exceed the 2,000-dim HNSW ceiling for `vector`. Not needed at 1536.                                                                                                                                                                |
+| JWT algorithm                | **ES256** (asymmetric, P-256)        | JWKS at `/auth/v1/.well-known/jwks.json` serves the public key, and the `kid` in issued access tokens matches it. The auth guard verifies **locally via JWKS** — no shared secret, survives rotation.                                                      |
+| Auth Admin API user creation | **works**                            | [supabase/cli#4820](https://github.com/supabase/cli/issues/4820) (`signing method HS256 is invalid` on local user creation) does **not** reproduce on 2.117.0. Seeding demo users via the Admin API is safe, so we avoid brittle raw `auth.users` inserts. |
+| Email confirmation           | disabled by default in `config.toml` | Signup works offline; the E2E test needs no mail server.                                                                                                                                                                                                   |
 
 Retained risk: these are facts about **CLI 2.117.0**. The CLI is pinned as a devDependency precisely
 so a reviewer gets the same answers rather than whatever is current.
@@ -66,5 +66,5 @@ Service-role credentials are held by the ingestion worker only.
 
 ---
 
-*(Further entries — chunking, embedding model, retrieval, schema, queue, caching, workflow vs agent
-— land as those milestones complete.)*
+_(Further entries — chunking, embedding model, retrieval, schema, queue, caching, workflow vs agent
+— land as those milestones complete.)_

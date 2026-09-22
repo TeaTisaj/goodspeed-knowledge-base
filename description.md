@@ -21,36 +21,43 @@
 Ship all of this before anything in Tier 2 or 3.
 
 **Monorepo**
+
 - Turborepo with `apps/web` (Next.js + React), `apps/api` (NestJS), and `packages/` for shared
   types, config, or utilities.
 - Sensible pipelines for `build`, `dev`, `lint`.
 - Clone → **single setup command** → running. The client states they will run the project.
 
 **Auth**
+
 - Supabase Auth, email/password sufficient.
 - Users can only see and interact with **their own** documents and conversations.
 
 **Document CRUD**
+
 - Create, read, update, delete. Fields: title, text content (plain text or markdown),
   **tags (optional)**, created/updated timestamps.
 
 **RAG pipeline**
+
 - On document create **or update**: chunk → embed → store embeddings in Supabase via **pgvector**.
 - Chunking strategy and size are our choice but **must be explainable and justified**.
 
 **Chat**
+
 - Retrieve relevant chunks via vector similarity search.
 - Include retrieved context in the prompt.
 - Display the response in a conversational UI.
 - **Maintain conversation history within a session.**
 
 **Provider-agnostic AI layer — the client calls this a key requirement**
+
 - Any provider following the **OpenAI API specification** swappable **via configuration, without
   changing application code**: OpenAI, Groq, Together AI, OpenRouter, local Ollama.
 - The client states they care about **how the interface is modeled**, not just that it works with
   one provider.
 
 **Deliverables**
+
 - Public GitHub repo, or private with `team@goodspeed.studio` invited.
 - `.env.example` with all required environment variables documented.
 - **README** containing: setup instructions, architecture decisions and reasoning, **how to swap AI
@@ -87,6 +94,7 @@ Not requested by task.md. Justified only where they serve something the client a
 **Cut from the bottom of this list first if the week gets tight.**
 
 **Serves "retrieval quality" and "AI abstraction" — the highest-graded areas**
+
 - Deliberate ingestion pipeline: parsing, cleaning, chunking with overlap, metadata, deduplication,
   and incremental re-ingestion when a document changes.
 - Retrieval beyond naive vector search: hybrid search (pgvector + Postgres full-text) with rank
@@ -100,6 +108,7 @@ Not requested by task.md. Justified only where they serve something the client a
   only where it earns its complexity.
 
 **Serves "code quality" and "database design"**
+
 - Solid NestJS architecture: modules, validated DTOs, proper error handling, typed contracts shared
   across the monorepo.
 - Ingestion as background jobs rather than in the request path, with job status visible to the user.
@@ -111,6 +120,7 @@ Not requested by task.md. Justified only where they serve something the client a
 - Clean commit history that tells the story of the build.
 
 **Documentation beyond the required README**
+
 - `DECISIONS.md`: every major decision (chunking, embedding model, retrieval method, schema,
   caching, queueing) with alternatives considered and why they were rejected. Opinionated but
   pragmatic — nothing overengineered, every choice defensible in a follow-up interview.
@@ -119,6 +129,7 @@ Not requested by task.md. Justified only where they serve something the client a
   cost considerations.
 
 **Lowest priority — serves nothing the client listed**
+
 - Caching (embeddings, repeated queries) and per-user rate limiting.
 - A live deployed demo URL as insurance against local-setup friction.
 
@@ -128,10 +139,10 @@ Not requested by task.md. Justified only where they serve something the client a
 
 Recorded so the reasoning isn't lost.
 
-| Removed | Conflicted with | Resolution |
-|---|---|---|
-| **Workspaces** (documents belonging to users *or* workspaces, membership, invites, switcher) | task.md §2: "Users should only be able to see and interact with **their own** documents and conversations." task.md never mentions tenancy workspaces — its only use of "workspace" is *monorepo* workspace structure. | Documents are **user-owned**. `owner_id` only; no `workspace_id`, no membership table. Multi-tenant sharing is noted in SCALING.md as a future migration path, not built. Speculative unused columns are worse to defend than a clean design with a documented upgrade path. |
-| **"Upload documents"** framed as core UI | task.md §3 defines core CRUD as creating documents with title/content/tags. File upload is a **stretch goal**, not baseline. | Core UI is create/edit/delete text and markdown documents. PDF/TXT upload is built in Tier 2, reusing the same ingestion path. |
+| Removed                                                                                      | Conflicted with                                                                                                                                                                                                        | Resolution                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspaces** (documents belonging to users _or_ workspaces, membership, invites, switcher) | task.md §2: "Users should only be able to see and interact with **their own** documents and conversations." task.md never mentions tenancy workspaces — its only use of "workspace" is _monorepo_ workspace structure. | Documents are **user-owned**. `owner_id` only; no `workspace_id`, no membership table. Multi-tenant sharing is noted in SCALING.md as a future migration path, not built. Speculative unused columns are worse to defend than a clean design with a documented upgrade path. |
+| **"Upload documents"** framed as core UI                                                     | task.md §3 defines core CRUD as creating documents with title/content/tags. File upload is a **stretch goal**, not baseline.                                                                                           | Core UI is create/edit/delete text and markdown documents. PDF/TXT upload is built in Tier 2, reusing the same ingestion path.                                                                                                                                               |
 
 ---
 

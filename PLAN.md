@@ -20,7 +20,7 @@ back with clickable citations pointing at the exact chunk.
 
 **1. Chat Completions, not the Responses API.**
 OpenAI recommends the Responses API for new projects. We deliberately target `/v1/chat/completions`
-anyway, because the assignment's key requirement is that *any OpenAI-spec-compatible provider* swaps
+anyway, because the assignment's key requirement is that _any OpenAI-spec-compatible provider_ swaps
 in via config — and Groq, Together, OpenRouter and Ollama implement Chat Completions, not Responses.
 Choosing the "recommended" API would silently break the single most-weighted requirement.
 
@@ -34,14 +34,14 @@ discovered later. Opening entry in DECISIONS.md.
 **2. One adapter plus declarative presets, not five provider classes.**
 Every target provider speaks the same wire protocol. The naive reading of "provider-agnostic" is
 five classes implementing an interface; the correct reading is one `OpenAICompatibleProvider`
-configured by a preset registry, because the variation between providers is *capability and
-endpoint*, not protocol. What the interface must actually model is the differences that bite:
+configured by a preset registry, because the variation between providers is _capability and
+endpoint_, not protocol. What the interface must actually model is the differences that bite:
 Groq has no embeddings endpoint, Ollama's dimensions differ from OpenAI's, not everyone streams
 tool calls. Those become a declared `capabilities` descriptor validated at boot, so a bad combo
 fails on startup with an actionable message rather than at 2am.
 
 **3. RLS is the permission boundary, not application code.**
-The API builds a *request-scoped* Supabase client from the caller's JWT, so Postgres itself
+The API builds a _request-scoped_ Supabase client from the caller's JWT, so Postgres itself
 enforces isolation on every query including vector search. Supabase's own RAG-with-permissions
 guide confirms RLS applies to similarity search with no `SECURITY DEFINER` wrapper needed. The
 service-role key is used in exactly one place: the ingestion worker. A `SECURITY DEFINER`
@@ -72,7 +72,7 @@ from NestJS, so it is worth stating rather than leaving as an arrow in a diagram
   to ingestion.
 
 Ingestion is a pg-boss job in Postgres. The worker is a separate NestJS module with its own
-bootstrap entrypoint, so the *same code* runs embedded (one command locally) or as a separate
+bootstrap entrypoint, so the _same code_ runs embedded (one command locally) or as a separate
 deployable process (production) by flipping one env var. That is the scaling story demonstrated in
 code rather than asserted in a document.
 
@@ -90,12 +90,12 @@ reviewer reads it that way. SCALING.md names the specific threshold at which we'
 **Option C — Next.js BFF: browser → Next route handlers → NestJS.**
 Same-origin cookies, no CORS, auth in Next middleware. Rejected: it adds a proxy hop on the hot
 streaming path, duplicates types at the boundary, and visually demotes NestJS to a backend-of-a-
-backend when NestJS *is* what's being evaluated. We go browser → NestJS directly with CORS, and
+backend when NestJS _is_ what's being evaluated. We go browser → NestJS directly with CORS, and
 Next.js stays a pure frontend.
 
 Also considered and rejected: an external vector store (Qdrant/Pinecone). The assignment mandates
 pgvector, and more substantively, moving vectors out of Postgres means reimplementing the entire
-permission model in a system that has no RLS. Covered in SCALING.md as the thing we would *not* do
+permission model in a system that has no RLS. Covered in SCALING.md as the thing we would _not_ do
 first.
 
 ### Retrieval pipeline — a deterministic workflow, with one LLM call that earns its place
@@ -128,7 +128,7 @@ without the LLM reranker. That turns the eval from decoration into the thing tha
 
 ### Ingestion pipeline — incremental, not destructive
 
-On document update we do *not* delete-and-re-embed everything. We chunk the new content, hash each
+On document update we do _not_ delete-and-re-embed everything. We chunk the new content, hash each
 chunk, and diff against existing chunks by hash:
 
 - unchanged hash → keep the row, update its position
@@ -151,29 +151,29 @@ advertising the best case.
 
 Verified against the npm registry on 2026-09-23.
 
-| Package | Version | Why this, and why pinned |
-|---|---|---|
-| Node.js | **24.21.0** (`.nvmrc`, `engines`) | Forced: `@nestjs/schematics@12` requires `^22.22.3 \|\| ^24.15.0 \|\| >=26`. Node 24 is Active LTS (since 2025-10-28, EOL 2028-04-30) and satisfies every package below. **Installed 2026-09-23 via fnm — was 22.13.0, which would have failed.** Node 26 becomes LTS 2026-10-28; staying on 24 avoids a week-old runtime and keeps corepack bundled. |
-| pnpm | **12.5.1** via `packageManager` | Turborepo's default. Pinned in the `packageManager` field so every machine and CI resolves the identical version. Note corepack is bundled in Node 24 but **removed from Node 25+**, so the README documents `npm i -g corepack` as the fallback for anyone on a newer runtime. |
-| turbo | 2.11.3 | `tasks` schema (not legacy `pipeline`). |
-| TypeScript | **6.0.3 — deliberately not 7** | TS 7.0.2 is latest, but ships no compiler API, so `nest build` cannot run on it, and `typescript-eslint@8` declares `typescript: <6.1.0`. TS7 is a fast typecheck-only option we note in DECISIONS.md and don't adopt. |
-| Next.js | 16.3.6 | Turbopack default. Note: `next lint` was **removed** in 16 — the turbo `lint` task calls eslint directly. `params`/`searchParams` are Promises. |
-| React | 19.3.0 | Required by Next 16 App Router. |
-| NestJS | 12.0.4 | ESM-ready packages via `require(esm)`; brings native Standard Schema validation (below). |
-| Zod | 4.6.5 | The contracts layer. See next row. |
-| Validation | `StandardSchemaValidationPipe` (built into `@nestjs/common` 12) | **The reason `packages/contracts` is real.** One Zod schema validates in NestJS *and* infers the TypeScript type the web app consumes. class-validator would force a duplicated class per DTO and give the frontend nothing. This is what makes "typed contracts shared across the monorepo" more than a slogan. |
-| openai | 7.22.0 | v7's only breaking change is Node >=22. Used against `/v1/chat/completions` for portability. |
-| @supabase/supabase-js | 2.117.0 | |
-| @supabase/ssr | 0.12.7 | Cookie-based session in Next 16. |
-| supabase (CLI) | 2.117.0 **as a devDependency** | Reviewers need no global install — this is what makes one-command setup honest. |
-| pgvector | 0.8.x (verify, see Risks) | HNSW. 0.8.0+ adds iterative scan, which matters under RLS filtering. |
-| pg-boss | 12.33.6 | Postgres-backed queue; no Redis. |
-| Vitest | 5.0.1 | One runner across the monorepo, ESM-native, no ts-jest transform step. Jest+SWC is the fallback if NestJS DI friction appears. |
-| Playwright | 1.63.0 | Exactly one E2E smoke test. |
-| Tailwind | 4.3.3 | |
-| ESLint | 10.11.0 + typescript-eslint 8.70.1 | Peer ranges verified compatible with ESLint 10 and TS 6. |
-| gpt-tokenizer | 4.0.0 | Token counts for chunk sizing and cost tracking. Exact for OpenAI (cl100k/o200k); **approximate for Llama-family models on Groq/Together/Ollama**, which use different tokenizers — the usage view labels non-OpenAI counts as estimates rather than quietly implying precision. |
-| unpdf | 1.8.1 | PDF extraction (optional milestone). Serverless-safe, no native deps, maintained successor to pdf-parse. |
+| Package               | Version                                                         | Why this, and why pinned                                                                                                                                                                                                                                                                                                                              |
+| --------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node.js               | **24.21.0** (`.nvmrc`, `engines`)                               | Forced: `@nestjs/schematics@12` requires `^22.22.3 \|\| ^24.15.0 \|\| >=26`. Node 24 is Active LTS (since 2025-10-28, EOL 2028-04-30) and satisfies every package below. **Installed 2026-09-23 via fnm — was 22.13.0, which would have failed.** Node 26 becomes LTS 2026-10-28; staying on 24 avoids a week-old runtime and keeps corepack bundled. |
+| pnpm                  | **12.5.1** via `packageManager`                                 | Turborepo's default. Pinned in the `packageManager` field so every machine and CI resolves the identical version. Note corepack is bundled in Node 24 but **removed from Node 25+**, so the README documents `npm i -g corepack` as the fallback for anyone on a newer runtime.                                                                       |
+| turbo                 | 2.11.3                                                          | `tasks` schema (not legacy `pipeline`).                                                                                                                                                                                                                                                                                                               |
+| TypeScript            | **6.0.3 — deliberately not 7**                                  | TS 7.0.2 is latest, but ships no compiler API, so `nest build` cannot run on it, and `typescript-eslint@8` declares `typescript: <6.1.0`. TS7 is a fast typecheck-only option we note in DECISIONS.md and don't adopt.                                                                                                                                |
+| Next.js               | 16.3.6                                                          | Turbopack default. Note: `next lint` was **removed** in 16 — the turbo `lint` task calls eslint directly. `params`/`searchParams` are Promises.                                                                                                                                                                                                       |
+| React                 | 19.3.0                                                          | Required by Next 16 App Router.                                                                                                                                                                                                                                                                                                                       |
+| NestJS                | 12.0.4                                                          | ESM-ready packages via `require(esm)`; brings native Standard Schema validation (below).                                                                                                                                                                                                                                                              |
+| Zod                   | 4.6.5                                                           | The contracts layer. See next row.                                                                                                                                                                                                                                                                                                                    |
+| Validation            | `StandardSchemaValidationPipe` (built into `@nestjs/common` 12) | **The reason `packages/contracts` is real.** One Zod schema validates in NestJS _and_ infers the TypeScript type the web app consumes. class-validator would force a duplicated class per DTO and give the frontend nothing. This is what makes "typed contracts shared across the monorepo" more than a slogan.                                      |
+| openai                | 7.22.0                                                          | v7's only breaking change is Node >=22. Used against `/v1/chat/completions` for portability.                                                                                                                                                                                                                                                          |
+| @supabase/supabase-js | 2.117.0                                                         |                                                                                                                                                                                                                                                                                                                                                       |
+| @supabase/ssr         | 0.12.7                                                          | Cookie-based session in Next 16.                                                                                                                                                                                                                                                                                                                      |
+| supabase (CLI)        | 2.117.0 **as a devDependency**                                  | Reviewers need no global install — this is what makes one-command setup honest.                                                                                                                                                                                                                                                                       |
+| pgvector              | 0.8.x (verify, see Risks)                                       | HNSW. 0.8.0+ adds iterative scan, which matters under RLS filtering.                                                                                                                                                                                                                                                                                  |
+| pg-boss               | 12.33.6                                                         | Postgres-backed queue; no Redis.                                                                                                                                                                                                                                                                                                                      |
+| Vitest                | 5.0.1                                                           | One runner across the monorepo, ESM-native, no ts-jest transform step. **Verified 2026-09-23** with `unplugin-swc` (`decoratorMetadata: true`): Nest DI resolves correctly under Vitest, so the Jest fallback is not needed.                                                                                                                          |
+| Playwright            | 1.63.0                                                          | Exactly one E2E smoke test.                                                                                                                                                                                                                                                                                                                           |
+| Tailwind              | 4.3.3                                                           |                                                                                                                                                                                                                                                                                                                                                       |
+| ESLint                | 10.11.0 + typescript-eslint 8.70.1                              | Peer ranges verified compatible with ESLint 10 and TS 6.                                                                                                                                                                                                                                                                                              |
+| gpt-tokenizer         | 4.0.0                                                           | Token counts for chunk sizing and cost tracking. Exact for OpenAI (cl100k/o200k); **approximate for Llama-family models on Groq/Together/Ollama**, which use different tokenizers — the usage view labels non-OpenAI counts as estimates rather than quietly implying precision.                                                                      |
+| unpdf                 | 1.8.1                                                           | PDF extraction (optional milestone). Serverless-safe, no native deps, maintained successor to pdf-parse.                                                                                                                                                                                                                                              |
 
 **Embedding model: `text-embedding-3-small`, 1536 dims, $0.02/M tokens.**
 Not `-3-large`: it is 6.5x the price for a marginal gain here, and at 3072 dims it **exceeds
@@ -186,7 +186,7 @@ This is the most commonly recommended 2026 default and needs zero model calls. B
 evidence is **not consistent**, and pretending otherwise would be the wrong move in an interview:
 some write-ups claim semantic chunking gains 15–25% over recursive, while Chroma's benchmark puts
 recursive at 85–90% recall against semantic's 91–92% — a 2–6 point gap for 3–5x the compute. One
-January 2026 analysis found chunk overlap gave *no* measurable benefit and only raised indexing cost.
+January 2026 analysis found chunk overlap gave _no_ measurable benefit and only raised indexing cost.
 
 That disagreement is precisely the argument for the eval harness. We start at the consensus default
 and measure 256/512/1024 and overlap on/off against our own corpus, then publish the table. The
@@ -200,22 +200,21 @@ Splitter respects markdown structure (headings → paragraphs → sentences → 
 Each milestone is independently testable and ends in a working state. Ordered by dependency.
 
 ### M0 — Foundations (0.5d)
-- [ ] Turborepo skeleton, pnpm workspaces, `tasks` for `build`/`dev`/`lint`/`test`/`typecheck`
-- [ ] Shared `packages/tsconfig` + `packages/eslint-config`; `.nvmrc` → Node 24; `engines` field
-- [ ] `.env.example` with every var documented; Zod env schema
-- [ ] CI skeleton: install → lint → typecheck → unit tests
-- [ ] **Spike (timeboxed 2h): Vitest + NestJS 12 DI + decorators.** Fall back to Jest+SWC if it fights back.
-- [ ] **Environment verification gate — run `supabase start` once and record the answers.** Three
+
+- [x] Turborepo skeleton, pnpm workspaces, `tasks` for `build`/`dev`/`lint`/`test`/`typecheck`
+- [x] Shared `packages/tsconfig` + `packages/eslint-config`; `.nvmrc` → Node 24; `engines` field
+- [x] `.env.example` with every var documented; Zod env schema
+- [x] CI skeleton: install → lint → typecheck → unit tests
+- [x] **Spike (timeboxed 2h): Vitest + NestJS 12 DI + decorators.** Fall back to Jest+SWC if it fights back.
+- [x] **Environment verification gate — run `supabase start` once and record the answers.** Three
       assumptions in this plan are unverified until the CLI is actually installed, and each changes
-      a downstream decision. Do not defer these; they are cheap now and expensive in M4.
-      - Postgres and **pgvector version** → gates iterative scan (risk 3)
-      - **JWT algorithm** the local project issues, ES256 or HS256 → gates the auth guard (risk 11)
-      - **Creating a user via the Auth Admin API succeeds** → gates seeding, which is on the
-        critical path for the one-command setup (risk 11)
+      a downstream decision. Do not defer these; they are cheap now and expensive in M4. - Postgres and **pgvector version** → gates iterative scan (risk 3) - **JWT algorithm** the local project issues, ES256 or HS256 → gates the auth guard (risk 11) - **Creating a user via the Auth Admin API succeeds** → gates seeding, which is on the
+      critical path for the one-command setup (risk 11)
 - Test: `pnpm lint && pnpm typecheck` green on an empty repo; CI passes; the three answers above
   written into DECISIONS.md so the reasoning is dated and sourced.
 
 ### M1 — Data layer (1d)
+
 - [ ] Supabase local via devDependency CLI; `supabase/migrations/` as real, ordered SQL files
 - [ ] Schema: `documents`, `chunks`, `ingestion_jobs`, `conversations`, `messages`,
       `message_citations`, `embedding_cache`, `usage_events`
@@ -244,7 +243,9 @@ Each milestone is independently testable and ends in a working state. Ordered by
   returns zero of user A's chunks, executed with B's actual JWT.
 
 ### M2 — `packages/ai`, the provider layer (1d)
+
 Framework-free on purpose: a reviewer can read the interface without NestJS in the way.
+
 - [ ] `LlmProvider` / `EmbeddingProvider` interfaces + `capabilities` descriptor
 - [ ] **Batch-first embeddings** (`embed(texts[])`, not `embed(text)`) — one-at-a-time embedding is
       the classic ingestion performance bug, and the interface should make the fast path the easy one
@@ -263,6 +264,7 @@ Framework-free on purpose: a reviewer can read the interface without NestJS in t
   swappable" is a tested claim rather than a README claim. HTTP mocked with msw.
 
 ### M3 — `packages/rag`, pure logic (0.75d)
+
 - [ ] Recursive markdown-aware chunker with overlap and token counting
 - [ ] Content-hash chunk diffing (the incremental re-ingestion core)
 - [ ] RRF fusion + metadata filtering
@@ -271,6 +273,7 @@ Framework-free on purpose: a reviewer can read the interface without NestJS in t
   code-fence edge cases, empty/huge documents, fusion ranking math, diff correctness.
 
 ### M4 — API: documents + ingestion (1d)
+
 - [ ] `SupabaseModule`: request-scoped user client (RLS) + admin client (worker only)
 - [ ] Auth guard verifying Supabase JWTs locally with `jose` — no shared secret, survives key
       rotation. **Measured 2026-09-23: local CLI 2.117.0 issues ES256**, JWKS serves a P-256 key and
@@ -286,6 +289,7 @@ Framework-free on purpose: a reviewer can read the interface without NestJS in t
   Assert on a bound, not an exact number, because overlap legitimately makes it two.
 
 ### M5 — API: retrieval + chat (1d)
+
 - [ ] Hybrid retrieval service with optional LLM reranker behind a flag
 - [ ] Optional tag filter on retrieval — the concrete payoff for tags, and the reason the metadata
       filtering in M3 exists rather than being decorative
@@ -303,6 +307,7 @@ Framework-free on purpose: a reviewer can read the interface without NestJS in t
   and an aborted client request cancels the upstream call.
 
 ### M6 — Web (1.5d)
+
 - [ ] Supabase Auth (email/password) with `@supabase/ssr`; protected routes
 - [ ] Document list/create/edit/delete with tag editing; live ingestion status
       (queued → processing → ready → failed)
@@ -312,6 +317,7 @@ Framework-free on purpose: a reviewer can read the interface without NestJS in t
 - Test: component tests for the stream reducer; the full loop is covered by M7's E2E.
 
 ### M7 — Quality gate (0.75d) — **v1 ships here**
+
 - [ ] Eval harness: ~25 question/expected-source pairs over the seed corpus; reports hit@k, MRR,
       faithfulness (LLM-judge). `pnpm eval`. Results table committed to the repo.
 - [ ] Run the ablations that justify the design: chunk size 256/512/1024, vector-only vs hybrid,
@@ -327,15 +333,15 @@ Framework-free on purpose: a reviewer can read the interface without NestJS in t
 M8 and M9 are **task.md stretch goals** — offered by the client, so they land squarely on target.
 M10 is pure insurance and the only item here the client never mentioned.
 
-| # | Item | Est. | Notes |
-|---|---|---|---|
-| M8 | PDF/TXT upload + extraction | 0.5d | task.md stretch goal. unpdf; Supabase Storage; reuses the whole ingestion path. Highest demo value per hour. |
-| M9 | Usage/token tracking view | 0.5d | task.md stretch goal. `usage_events` is already populated by the `UsageTracking` decorator — mostly a query and a page. Pairs naturally with the provider abstraction since pricing is per-provider config. |
-| M10 | Live demo URL | 0.5d | Not requested. Vercel + hosted Supabase + Fly/Render for the API. Do last: it needs stable env contracts. |
+| #   | Item                        | Est. | Notes                                                                                                                                                                                                       |
+| --- | --------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M8  | PDF/TXT upload + extraction | 0.5d | task.md stretch goal. unpdf; Supabase Storage; reuses the whole ingestion path. Highest demo value per hour.                                                                                                |
+| M9  | Usage/token tracking view   | 0.5d | task.md stretch goal. `usage_events` is already populated by the `UsageTracking` decorator — mostly a query and a page. Pairs naturally with the provider abstraction since pricing is per-provider config. |
+| M10 | Live demo URL               | 0.5d | Not requested. Vercel + hosted Supabase + Fly/Render for the API. Do last: it needs stable env contracts.                                                                                                   |
 
 **Honest total: ~7.5d core + ~1.5d optional ≈ 9 days.** M0–M7 is the week you asked for. Dropping
 workspaces removed 1.5d and, more importantly, removed the only milestone where more work made the
-submission match the brief *less*. If it still gets tight, cut M10 — it's the one item with no
+submission match the brief _less_. If it still gets tight, cut M10 — it's the one item with no
 line in task.md.
 
 ---
@@ -344,16 +350,16 @@ line in task.md.
 
 Tests go where bugs are expensive or correctness is invisible — not for a coverage number.
 
-| Layer | What | Mocked | Why it's worth writing |
-|---|---|---|---|
-| Unit | Chunker, RRF fusion, hash diffing, prompt/citation builder | nothing (pure) | Silent correctness. A chunker that drops the last 20 tokens produces a working app with quietly worse answers. |
-| Unit | Retry/backoff, fallback, cache decorators | HTTP via msw | Failure paths that never run in dev and always run in production. |
-| Contract | One suite × every provider implementation | HTTP | Makes "genuinely swappable" falsifiable. The single highest-signal test file in the repo. |
-| Integration | RLS isolation, executed as two real users | nothing — real local Postgres | The security claim. Mocking here would test nothing. |
-| Integration | Ingestion job end-to-end, incremental re-ingest | FakeProvider | Proves the diffing actually saves calls. |
-| Integration | SSE event ordering, cancellation | FakeProvider | Streaming breaks in ways unit tests can't see. |
-| E2E | One Playwright happy path | nothing | Proves the whole loop for real. |
-| Eval | Retrieval + faithfulness over a fixture set | FakeProvider in CI, real provider locally | Quality measured, not assumed. |
+| Layer       | What                                                       | Mocked                                    | Why it's worth writing                                                                                         |
+| ----------- | ---------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Unit        | Chunker, RRF fusion, hash diffing, prompt/citation builder | nothing (pure)                            | Silent correctness. A chunker that drops the last 20 tokens produces a working app with quietly worse answers. |
+| Unit        | Retry/backoff, fallback, cache decorators                  | HTTP via msw                              | Failure paths that never run in dev and always run in production.                                              |
+| Contract    | One suite × every provider implementation                  | HTTP                                      | Makes "genuinely swappable" falsifiable. The single highest-signal test file in the repo.                      |
+| Integration | RLS isolation, executed as two real users                  | nothing — real local Postgres             | The security claim. Mocking here would test nothing.                                                           |
+| Integration | Ingestion job end-to-end, incremental re-ingest            | FakeProvider                              | Proves the diffing actually saves calls.                                                                       |
+| Integration | SSE event ordering, cancellation                           | FakeProvider                              | Streaming breaks in ways unit tests can't see.                                                                 |
+| E2E         | One Playwright happy path                                  | nothing                                   | Proves the whole loop for real.                                                                                |
+| Eval        | Retrieval + faithfulness over a fixture set                | FakeProvider in CI, real provider locally | Quality measured, not assumed.                                                                                 |
 
 **Mocking rule:** mock the network boundary, never our own logic. RLS and migrations always run
 against real Postgres, because a mocked RLS test proves nothing about RLS.
@@ -364,21 +370,21 @@ CI: lint → typecheck → unit → (Supabase in Docker) migrations + integratio
 
 ## 5. Risks and mitigations
 
-| # | Risk | Likelihood | Mitigation |
-|---|---|---|---|
-| 1 | ~~Node too old for `@nestjs/schematics@12`~~ | **RESOLVED 2026-09-23** | fnm 1.39.0 installed; Node **24.21.0** is now the default, pnpm **12.5.1** via corepack. Still ship `.nvmrc` + `engines` + a setup preflight so *reviewers* hit a clear message rather than a stack trace. |
-| 2 | TypeScript 7 is `latest` on npm; installing it breaks `nest build` and typescript-eslint | High | Pin `typescript@6.0.3` explicitly at the root. Document why in DECISIONS.md — knowing the bleeding edge exists and declining it is the point. |
-| 3 | ~~Local Supabase may ship pgvector < 0.8~~ | **RESOLVED 2026-09-23** | Measured: Postgres **17.6**, pgvector **0.8.2**, `hnsw.iterative_scan` settable, `halfvec` present. No over-fetch workaround needed. See DECISIONS.md D0. |
-| 4 | Vitest + NestJS 12 ESM + decorator metadata friction | Medium | Timeboxed 2h spike in M0. Fall back to Jest+SWC. Don't discover this in M4. |
-| 5 | SSE buffering — streaming works in dev, arrives as one blob in prod | Medium | Disable compression on the stream route, `X-Accel-Buffering: no`, flush per event, verify in a real browser not just curl. |
-| 6 | Scope overrun from optional milestones | Medium | Hard gate: M0–M7 must be shippable and committed before M8 starts. Each optional item is its own branch and commit series. Dropping workspaces cut this risk from high to medium. |
-| 7 | Reviewer has no OpenAI key and sees a dead app | Medium | FakeProvider means the app boots and works with zero keys, and its hashing-vectorizer embeddings make retrieval genuinely demonstrable. Plus the live demo URL (M10). |
-| 8 | Ollama's OpenAI compatibility is officially experimental and subject to breaking changes | Medium | Ship the preset, and state plainly in the README which providers were actually tested. Honesty here reads as senior; an untested five-provider claim reads as careless. |
-| 9 | Next 16 removed `next lint`; a copied turbo config silently lints nothing | Low | Call eslint directly in the lint task; assert it fails on a deliberate violation once. |
-| 10 | Docker image pull is slow on the reviewer's machine | Low | Document the one-time cost in the README; the demo URL is the escape hatch. |
-| 11 | ~~Auth Admin API user creation broken locally (CLI #4820)~~ | **RESOLVED 2026-09-23** | Does not reproduce on CLI 2.117.0 — created and deleted a user via the Admin API successfully. Seeding uses the Admin API, not raw `auth.users` inserts. See DECISIONS.md D0. |
-| 12 | **pg-boss over a transaction-mode pooler silently fails to pick up jobs.** pg-boss uses LISTEN/NOTIFY, which is session-scoped. Bites on deploy (M10), not locally. | Medium (M10 only) | Worker connects on a **session-mode or direct DSN** (Supabase port 5432), never the transaction pooler (6543). Keep it a separate env var from the app's connection string so the distinction is explicit rather than accidental. |
-| 13 | ~~E2E signup blocks on email confirmation~~ | **RESOLVED 2026-09-23** | `enable_confirmations = false` confirmed in the generated `config.toml`. Signup works offline; no mail server needed. |
+| #   | Risk                                                                                                                                                                | Likelihood              | Mitigation                                                                                                                                                                                                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | ~~Node too old for `@nestjs/schematics@12`~~                                                                                                                        | **RESOLVED 2026-09-23** | fnm 1.39.0 installed; Node **24.21.0** is now the default, pnpm **12.5.1** via corepack. Still ship `.nvmrc` + `engines` + a setup preflight so _reviewers_ hit a clear message rather than a stack trace.                                                 |
+| 2   | TypeScript 7 is `latest` on npm; installing it breaks `nest build` and typescript-eslint                                                                            | High                    | Pin `typescript@6.0.3` explicitly at the root. Document why in DECISIONS.md — knowing the bleeding edge exists and declining it is the point.                                                                                                              |
+| 3   | ~~Local Supabase may ship pgvector < 0.8~~                                                                                                                          | **RESOLVED 2026-09-23** | Measured: Postgres **17.6**, pgvector **0.8.2**, `hnsw.iterative_scan` settable, `halfvec` present. No over-fetch workaround needed. See DECISIONS.md D0.                                                                                                  |
+| 4   | ~~Vitest + NestJS 12 ESM + decorator metadata friction~~                                                                                                            | **RESOLVED 2026-09-23** | Spike passed inside the timebox. Vitest 5 + `unplugin-swc` with `decoratorMetadata` resolves Nest DI; `@nestjs/testing` works. No Jest fallback. Surfaced two real fixes: API is native ESM (D4), and `consistent-type-imports` is off for Nest code (D5). |
+| 5   | SSE buffering — streaming works in dev, arrives as one blob in prod                                                                                                 | Medium                  | Disable compression on the stream route, `X-Accel-Buffering: no`, flush per event, verify in a real browser not just curl.                                                                                                                                 |
+| 6   | Scope overrun from optional milestones                                                                                                                              | Medium                  | Hard gate: M0–M7 must be shippable and committed before M8 starts. Each optional item is its own branch and commit series. Dropping workspaces cut this risk from high to medium.                                                                          |
+| 7   | Reviewer has no OpenAI key and sees a dead app                                                                                                                      | Medium                  | FakeProvider means the app boots and works with zero keys, and its hashing-vectorizer embeddings make retrieval genuinely demonstrable. Plus the live demo URL (M10).                                                                                      |
+| 8   | Ollama's OpenAI compatibility is officially experimental and subject to breaking changes                                                                            | Medium                  | Ship the preset, and state plainly in the README which providers were actually tested. Honesty here reads as senior; an untested five-provider claim reads as careless.                                                                                    |
+| 9   | Next 16 removed `next lint`; a copied turbo config silently lints nothing                                                                                           | Low                     | Call eslint directly in the lint task; assert it fails on a deliberate violation once.                                                                                                                                                                     |
+| 10  | Docker image pull is slow on the reviewer's machine                                                                                                                 | Low                     | Document the one-time cost in the README; the demo URL is the escape hatch.                                                                                                                                                                                |
+| 11  | ~~Auth Admin API user creation broken locally (CLI #4820)~~                                                                                                         | **RESOLVED 2026-09-23** | Does not reproduce on CLI 2.117.0 — created and deleted a user via the Admin API successfully. Seeding uses the Admin API, not raw `auth.users` inserts. See DECISIONS.md D0.                                                                              |
+| 12  | **pg-boss over a transaction-mode pooler silently fails to pick up jobs.** pg-boss uses LISTEN/NOTIFY, which is session-scoped. Bites on deploy (M10), not locally. | Medium (M10 only)       | Worker connects on a **session-mode or direct DSN** (Supabase port 5432), never the transaction pooler (6543). Keep it a separate env var from the app's connection string so the distinction is explicit rather than accidental.                          |
+| 13  | ~~E2E signup blocks on email confirmation~~                                                                                                                         | **RESOLVED 2026-09-23** | `enable_confirmations = false` confirmed in the generated `config.toml`. Signup works offline; no mail server needed.                                                                                                                                      |
 
 ---
 
@@ -411,6 +417,7 @@ Ordered by how fast they'll reach for it, and what each has to prove in the firs
 ## 7. Scope
 
 ### Must have (v1, M0–M7)
+
 Turborepo with real shared packages · Supabase Auth · document CRUD · chunk/embed/store on create
 **and update** · hybrid retrieval · grounded answers with citations · streaming · provider-agnostic
 AI layer with 2+ implementations and boot-time validation · RLS-enforced isolation · background
@@ -420,11 +427,13 @@ DECISIONS.md + SCALING.md · eval harness with committed results.
 Documents are **user-owned** throughout, per task.md §2.
 
 ### Extras, in build order
+
 PDF/TXT upload (M8) → usage/token tracking view (M9) → live demo URL (M10).
 M8 and M9 are task.md stretch goals; M10 is not requested.
 
 ### Explicitly out of scope — and why, so it reads as judgment rather than omission
-- **Workspaces / shared documents.** task.md scopes visibility to a user's *own* documents and
+
+- **Workspaces / shared documents.** task.md scopes visibility to a user's _own_ documents and
   conversations. Building team tenancy would diverge from the spec, not exceed it. Noted in
   SCALING.md as a migration path.
 - **Agentic retrieval loops.** 3–10x tokens, needs stop conditions, no payoff on single-corpus Q&A.
@@ -449,21 +458,21 @@ all pinned versions; `@nestjs/schematics@12` engines `^22.22.3 || ^24.15.0 || >=
 `pg-boss@12` requires Node >=22.12; `vitest@5` engines `^22.12 || ^24 || >=26`; the `supabase` CLI
 is installable as a devDependency.
 
-| Claim | Source |
-|---|---|
-| RLS applies to vector similarity search with no `SECURITY DEFINER` wrapper | [Supabase: RAG with Permissions](https://supabase.com/docs/guides/ai/rag-with-permissions) |
-| `(select auth.uid())` 179ms→9ms; role policy 178,000ms→12ms; index 171ms→<0.1ms | [Supabase: RLS Performance and Best Practices](https://supabase.com/docs/guides/troubleshooting/rls-performance-and-best-practices-Z5Jjwv) |
-| Hybrid search SQL: vector + FTS CTEs fused by RRF, `rrf_k` default 50 | [Supabase: Hybrid search](https://supabase.com/docs/guides/ai/hybrid-search) |
-| HNSW/IVFFlat cap at 2,000 dims for `vector` (4,000 for `halfvec`); iterative scan added in 0.8.0 | [pgvector README](https://github.com/pgvector/pgvector) |
-| `nest build` cannot run on TS 7 (no compiler API); `emitDecoratorMetadata` itself does work | [NestJS and TypeScript 7](https://fernforge.github.io/devnotes/nestjs-typescript-7/) |
-| NestJS 12 Node requirements, ESM-only packages, `StandardSchemaValidationPipe` | [NestJS migration guide](https://docs.nestjs.com/migration-guide) |
-| Next 16 removed `next lint`; `params`/`searchParams` are Promises; Turbopack default | [Next.js 16 upgrade guide](https://nextjs.org/docs/app/guides/upgrading/version-16) |
-| Chat Completions still supports function calling; GPT-6 Astra requires Responses for tool calling | [OpenAI: Function calling](https://developers.openai.com/api/docs/guides/function-calling) |
-| `text-embedding-3-small`: 1536 dims, 8192 max input, $0.02/M, Matryoshka `dimensions` param | [OpenAI: New embedding models](https://openai.com/index/new-embedding-models-and-api-updates/) |
-| Supabase CLI ≥2.71.1 defaults local JWTs to ES256; local create-user failures | [supabase/cli #4726](https://github.com/supabase/cli/issues/4726), [#4820](https://github.com/supabase/cli/issues/4820) |
-| RFC 9457 obsoletes RFC 7807 (July 2023) | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) |
-| pg-boss uses LISTEN/NOTIFY → needs session-mode, not transaction-mode pooling | [Supabase: pooling and limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits) |
-| Ollama's OpenAI compatibility is experimental and subject to breaking changes | [Ollama: OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility) |
+| Claim                                                                                             | Source                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| RLS applies to vector similarity search with no `SECURITY DEFINER` wrapper                        | [Supabase: RAG with Permissions](https://supabase.com/docs/guides/ai/rag-with-permissions)                                                 |
+| `(select auth.uid())` 179ms→9ms; role policy 178,000ms→12ms; index 171ms→<0.1ms                   | [Supabase: RLS Performance and Best Practices](https://supabase.com/docs/guides/troubleshooting/rls-performance-and-best-practices-Z5Jjwv) |
+| Hybrid search SQL: vector + FTS CTEs fused by RRF, `rrf_k` default 50                             | [Supabase: Hybrid search](https://supabase.com/docs/guides/ai/hybrid-search)                                                               |
+| HNSW/IVFFlat cap at 2,000 dims for `vector` (4,000 for `halfvec`); iterative scan added in 0.8.0  | [pgvector README](https://github.com/pgvector/pgvector)                                                                                    |
+| `nest build` cannot run on TS 7 (no compiler API); `emitDecoratorMetadata` itself does work       | [NestJS and TypeScript 7](https://fernforge.github.io/devnotes/nestjs-typescript-7/)                                                       |
+| NestJS 12 Node requirements, ESM-only packages, `StandardSchemaValidationPipe`                    | [NestJS migration guide](https://docs.nestjs.com/migration-guide)                                                                          |
+| Next 16 removed `next lint`; `params`/`searchParams` are Promises; Turbopack default              | [Next.js 16 upgrade guide](https://nextjs.org/docs/app/guides/upgrading/version-16)                                                        |
+| Chat Completions still supports function calling; GPT-6 Astra requires Responses for tool calling | [OpenAI: Function calling](https://developers.openai.com/api/docs/guides/function-calling)                                                 |
+| `text-embedding-3-small`: 1536 dims, 8192 max input, $0.02/M, Matryoshka `dimensions` param       | [OpenAI: New embedding models](https://openai.com/index/new-embedding-models-and-api-updates/)                                             |
+| Supabase CLI ≥2.71.1 defaults local JWTs to ES256; local create-user failures                     | [supabase/cli #4726](https://github.com/supabase/cli/issues/4726), [#4820](https://github.com/supabase/cli/issues/4820)                    |
+| RFC 9457 obsoletes RFC 7807 (July 2023)                                                           | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html)                                                                                    |
+| pg-boss uses LISTEN/NOTIFY → needs session-mode, not transaction-mode pooling                     | [Supabase: pooling and limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)                        |
+| Ollama's OpenAI compatibility is experimental and subject to breaking changes                     | [Ollama: OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)                                                           |
 
 **Contested — treated as hypotheses to measure, not facts:**
 chunking defaults and the semantic-vs-recursive gap (sources disagree: 2–6 points vs 15–25%);

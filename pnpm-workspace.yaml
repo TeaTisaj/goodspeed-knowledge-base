@@ -1,11 +1,9 @@
 packages:
-  - "apps/*"
-  - "packages/*"
-minimumReleaseAgeExclude:
-  - '@turbo/darwin-64@2.11.3'
-  - '@turbo/darwin-arm64@2.11.3'
-  - '@turbo/linux-64@2.11.3'
-  - '@turbo/linux-arm64@2.11.3'
-  - '@turbo/windows-64@2.11.3'
-  - '@turbo/windows-arm64@2.11.3'
-  - turbo@2.11.3
+  - 'apps/*'
+  - 'packages/*'
+
+# Native postinstall scripts are blocked by default in pnpm 10+. Allow only the
+# packages that genuinely build a native binary, so a reviewer's install is
+# non-interactive without opting into arbitrary script execution.
+allowBuilds:
+  '@swc/core': true

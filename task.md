@@ -8,13 +8,13 @@ AI-assisted coding tools (Claude Code, Cursor, Copilot, Codex, etc.) are encoura
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Monorepo | Turborepo |
-| Frontend | React + Next.js |
-| Backend API | NestJS |
-| Database | Supabase (PostgreSQL + pgvector) |
-| AI | OpenAI SDK (provider-agnostic, see below) |
+| Layer       | Technology                                |
+| ----------- | ----------------------------------------- |
+| Monorepo    | Turborepo                                 |
+| Frontend    | React + Next.js                           |
+| Backend API | NestJS                                    |
+| Database    | Supabase (PostgreSQL + pgvector)          |
+| AI          | OpenAI SDK (provider-agnostic, see below) |
 
 ## Requirements
 
@@ -74,14 +74,14 @@ Design a clean abstraction for this. They care about **how the interface is mode
 
 ## What Is Being Evaluated
 
-| Area | What they are looking for |
-|---|---|
-| Monorepo architecture | Turborepo config, workspace structure, shared packages, DX (developer experience) |
-| Code quality | Clean separation of concerns, readable code, consistent patterns, proper error handling |
-| Database design | Schema design, pgvector usage, RLS policies, migration strategy |
-| RAG implementation | Chunking strategy, embedding storage, retrieval quality, prompt construction |
-| AI abstraction | Is the provider layer genuinely swappable? How well is the interface designed? |
-| Frontend craft | Component structure, state management, UX sensibility. Doesn't need to be beautiful, but must be usable |
+| Area                  | What they are looking for                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| Monorepo architecture | Turborepo config, workspace structure, shared packages, DX (developer experience)                       |
+| Code quality          | Clean separation of concerns, readable code, consistent patterns, proper error handling                 |
+| Database design       | Schema design, pgvector usage, RLS policies, migration strategy                                         |
+| RAG implementation    | Chunking strategy, embedding storage, retrieval quality, prompt construction                            |
+| AI abstraction        | Is the provider layer genuinely swappable? How well is the interface designed?                          |
+| Frontend craft        | Component structure, state management, UX sensibility. Doesn't need to be beautiful, but must be usable |
 
 ## Submission
 
