@@ -144,6 +144,7 @@ The contract suite runs one shared set of expectations against **every** impleme
 pnpm test              # unit — no network, no keys
 pnpm test:integration  # against local Supabase
 pnpm test:e2e          # one Playwright happy path
+pnpm eval              # retrieval quality, offline
 ```
 
 | Layer | What it covers |
@@ -153,7 +154,25 @@ pnpm test:e2e          # one Playwright happy path
 | E2E | Sign up → create → ingest → ask → cited answer, in a real browser |
 
 The RLS suite is verified **non-vacuous by mutation**: disabling RLS on `chunks` fails exactly the
-four chunk-related tests, including both retrieval paths.
+four chunk-related tests, including both retrieval paths. The E2E was verified the same way —
+breaking CORS fails it.
+
+### Retrieval quality
+
+`pnpm eval` measures retrieval on a fixture corpus, scored **chunk-level**: a hit requires the
+returned chunk to actually contain the answer span, because retrieving the right document but the
+wrong chunk still produces an unanswerable prompt.
+
+| config | hit@1 | hit@5 | MRR |
+|---|---|---|---|
+| semantic only | 86% | 94% | 0.900 |
+| keyword only | 91% | 94% | 0.933 |
+| **hybrid (RRF)** | 89% | 94% | 0.921 |
+
+Full numbers, ablations and **the caveats that matter** are in
+**[eval/RESULTS.md](eval/RESULTS.md)** — including where the measurements contradict the defaults,
+and why hybrid is kept despite not winning on this corpus (the default embedder is lexical, so the
+comparison does not yet test what its name suggests).
 
 ---
 
@@ -178,9 +197,10 @@ Full reasoning in **[DECISIONS.md](DECISIONS.md)**. The ones worth knowing up fr
 
 ## What I would do next
 
-- **Evaluation harness** with a committed results table: hit rate and MRR across chunk sizes,
-  vector-only vs hybrid, rerank on/off. The retrieval choices here are defensible but currently
-  argued rather than measured on this corpus.
+- **Re-run the eval against a real embedding model and a larger corpus.** The current fixture is
+  8 documents; differences of one or two questions are noise, and the semantic-vs-keyword comparison
+  is meaningless while the default embedder is lexical. This is the single most valuable next step,
+  because it is what would justify changing the chunk size or turning the reranker on.
 - **PDF upload** — the ingestion path already supports it; only extraction is missing.
 - **Usage and cost view.** `usage_events` is already populated by the tracking decorator.
 - **Reranking on by default**, if the eval justifies the extra call.

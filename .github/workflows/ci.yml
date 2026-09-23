@@ -39,3 +39,36 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      # Retrieval quality is a build gate, not a thing to notice later. Runs
+      # against the fake provider, so no secrets and no network.
+      - name: Retrieval eval
+        run: pnpm eval --min-hit-rate=0.85
+
+  database:
+    name: migrations / RLS / integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Start Supabase
+        run: pnpm exec supabase start
+
+      - name: Apply migrations
+        run: pnpm exec supabase db reset --no-seed
+
+      - name: Build shared packages
+        run: pnpm build --filter=@kb/contracts --filter=@kb/ai --filter=@kb/rag
+
+      # The security claim. Runs against real Postgres with real user JWTs,
+      # because a mocked RLS test proves nothing about RLS.
+      - name: Integration tests
+        run: pnpm test:integration
