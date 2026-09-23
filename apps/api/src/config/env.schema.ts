@@ -26,7 +26,15 @@ export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(3001),
-    CORS_ORIGIN: nonEmpty.default('http://localhost:3000'),
+    /**
+     * Comma-separated allowed origins.
+     *
+     * Defaults to both localhost and 127.0.0.1 because they are *different
+     * origins* to a browser, and a reviewer may open either. Allowing only one
+     * produces a blank page with a CORS error in the console and a working API
+     * when tested with curl -- which is exactly how this was first missed.
+     */
+    CORS_ORIGIN: nonEmpty.default('http://localhost:3000,http://127.0.0.1:3000'),
 
     // Supabase. The service-role key is held by the worker only.
     SUPABASE_URL: z.url(),

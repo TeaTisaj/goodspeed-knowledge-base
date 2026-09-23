@@ -1,0 +1,243 @@
+'use client';
+
+import type { Citation, Conversation, StreamEvent } from '@kb/contracts';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiError, api, streamAsk } from '@/lib/api';
+import { Button, EmptyState, ErrorBanner, Spinner } from '@/components/ui';
+import { CitationCard } from '@/components/citation-card';
+
+interface Turn {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  citations: Citation[];
+  streaming?: boolean;
+}
+
+const STAGE_LABEL: Record<string, string> = {
+  condensing: 'Understanding the follow-up...',
+  retrieving: 'Searching your documents...',
+  generating: 'Writing an answer...',
+};
+
+export default function ChatPage() {
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [question, setQuestion] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | undefined>();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [openCitation, setOpenCitation] = useState<Citation | null>(null);
+
+  const abortRef = useRef<AbortController | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      setConversations(await api.listConversations());
+    } catch {
+      // A failure to list history must not block asking a new question.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadConversations();
+  }, [loadConversations]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [turns]);
+
+  async function openConversation(id: string) {
+    setError(null);
+    setConversationId(id);
+    try {
+      const msgs = await api.listMessages(id);
+      setTurns(
+        msgs.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          citations: m.citations,
+        })),
+      );
+    } catch (e) {
+      setError(e instanceof ApiError ? e.problem.title : 'Could not load that conversation');
+    }
+  }
+
+  function startNew() {
+    abortRef.current?.abort();
+    setConversationId(undefined);
+    setTurns([]);
+    setError(null);
+    setStage(null);
+  }
+
+  async function ask(e: React.FormEvent) {
+    e.preventDefault();
+    const q = question.trim();
+    if (!q || busy) return;
+
+    setQuestion('');
+    setError(null);
+    setBusy(true);
+
+    const userTurn: Turn = { id: `u-${Date.now()}`, role: 'user', content: q, citations: [] };
+    const assistantId = `a-${Date.now()}`;
+    setTurns((prev) => [
+      ...prev,
+      userTurn,
+      { id: assistantId, role: 'assistant', content: '', citations: [], streaming: true },
+    ]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const patch = (fn: (t: Turn) => Turn) =>
+      setTurns((prev) => prev.map((t) => (t.id === assistantId ? fn(t) : t)));
+
+    try {
+      await streamAsk(
+        { question: q, conversationId },
+        (event: StreamEvent) => {
+          switch (event.type) {
+            case 'start':
+              setConversationId(event.conversationId);
+              break;
+            case 'status':
+              setStage(event.stage);
+              break;
+            case 'citations':
+              // Sources arrive before the answer, so they can be shown while
+              // the text is still streaming.
+              patch((t) => ({ ...t, citations: event.citations }));
+              break;
+            case 'token':
+              patch((t) => ({ ...t, content: t.content + event.delta }));
+              break;
+            case 'error':
+              setError(event.message);
+              patch((t) => ({ ...t, streaming: false }));
+              break;
+            case 'done':
+              patch((t) => ({ ...t, streaming: false }));
+              break;
+          }
+        },
+        controller.signal,
+      );
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') {
+        setError(e instanceof ApiError ? e.problem.title : 'The answer stream failed');
+      }
+      patch((t) => ({ ...t, streaming: false }));
+    } finally {
+      setBusy(false);
+      setStage(null);
+      abortRef.current = null;
+      void loadConversations();
+    }
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+    setBusy(false);
+    setStage(null);
+  }
+
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row">
+      <aside className="flex shrink-0 flex-col gap-2 lg:w-56">
+        <Button variant="secondary" onClick={startNew}>
+          New conversation
+        </Button>
+        <div className="flex flex-col gap-1">
+          {conversations.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => void openConversation(c.id)}
+              className={`truncate rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-[var(--color-surface-muted)] ${
+                c.id === conversationId ? 'bg-[var(--color-surface-muted)] font-medium' : ''
+              }`}
+            >
+              {c.title}
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <section className="flex min-h-[60vh] flex-1 flex-col gap-3">
+        {turns.length === 0 ? (
+          <EmptyState
+            title="Ask about your documents"
+            description="Answers are grounded in your own documents, with citations back to the exact chunk that supported each claim."
+          />
+        ) : (
+          <div className="flex flex-col gap-4">
+            {turns.map((turn) => (
+              <div key={turn.id} className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-[var(--color-ink-muted)]">
+                  {turn.role === 'user' ? 'You' : 'Assistant'}
+                </span>
+
+                <div
+                  className={`whitespace-pre-wrap rounded-md px-3 py-2 text-sm leading-relaxed ${
+                    turn.role === 'user' ? 'bg-[var(--color-surface-muted)]' : 'border'
+                  }`}
+                >
+                  {turn.content || (turn.streaming ? '' : '(no answer)')}
+                  {turn.streaming && (
+                    <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-current align-text-bottom" />
+                  )}
+                </div>
+
+                {turn.role === 'assistant' && turn.citations.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {turn.citations.map((c) => (
+                      <button
+                        key={`${turn.id}-${c.number}`}
+                        onClick={() => setOpenCitation(c)}
+                        className="rounded-full border px-2 py-0.5 text-xs transition hover:bg-[var(--color-surface-muted)]"
+                        title={c.documentTitle}
+                      >
+                        [{c.number}] {c.documentTitle || 'Source'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        )}
+
+        {stage && <Spinner label={STAGE_LABEL[stage] ?? 'Working...'} />}
+        {error && <ErrorBanner message={error} />}
+
+        <form onSubmit={ask} className="mt-auto flex gap-2 pt-2">
+          <input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Ask a question about your documents..."
+            className="flex-1 rounded-md border bg-transparent px-3 py-2 text-sm"
+          />
+          {busy ? (
+            <Button variant="secondary" onClick={stop}>
+              Stop
+            </Button>
+          ) : (
+            <Button type="submit" disabled={!question.trim()}>
+              Ask
+            </Button>
+          )}
+        </form>
+      </section>
+
+      {openCitation && (
+        <CitationCard citation={openCitation} onClose={() => setOpenCitation(null)} />
+      )}
+    </div>
+  );
+}

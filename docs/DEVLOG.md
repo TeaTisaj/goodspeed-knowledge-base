@@ -65,3 +65,62 @@ rebuilds PATH after `~/.zshenv`. Resolved by initialising fnm in `~/.zshenv` _an
 **Next:** M0 foundations, opening with the environment verification gate — pgvector version, local
 JWT algorithm, and Auth Admin API user creation. All three are assumptions the plan refuses to make
 without checking.
+
+---
+
+## 2026-09-23 (later) — M0 through M6. Backend and frontend complete.
+
+**Shipped:** monorepo and toolchain (M0), schema + RLS + hybrid search (M1), the provider-agnostic
+AI layer (M2), chunking and fusion (M3), documents and background ingestion (M4), retrieval and
+streaming chat (M5), the Next.js UI (M6). 195 unit tests, 28 integration, 2 E2E.
+
+**Where AI accelerated things**
+- Version research paid off repeatedly. TypeScript 7 ships no compiler API so `nest build` cannot
+  run on it; NestJS 12 is ESM-only so CommonJS consumption needs a resolution mode TypeScript 6
+  already deprecates; Next 16 removed `next lint`. All three would have been discovered painfully.
+- Reading the actual `.d.ts` files rather than guessing APIs. `StandardSchemaValidationPipe` takes
+  the schema on the *parameter decorator*, not the pipe constructor — I had guessed wrong, and the
+  type definitions settled it in one look.
+- Writing tests that encode intent rather than implementation. Several caught real bugs immediately.
+
+**Where AI was wrong, and what it cost**
+- **Guessed API shapes instead of checking.** pg-boss v12 has no default export, `createQueue` does
+  not take a `name` in its options, and `@eslint/js` does not track ESLint's version number. Each
+  was a build failure that a thirty-second look at the types would have prevented.
+- **Optimised before measuring, and broke correctness.** Added a pg-boss `singletonKey` to debounce
+  rapid saves. It enforces uniqueness across *all* job states including `completed`, so after a
+  document's first ingestion every later enqueue returned null and the document could never be
+  re-ingested — silently, with nothing logged. The debounce protected against a problem that does
+  not exist at single-digit jobs per minute.
+- **Wrote a schema whose default silently destroyed data.** `updateDocumentSchema` reused a `tags`
+  field carrying `.default([])`, so `PATCH {}` parsed to `{ tags: [] }`, passed the "no fields"
+  guard, and cleared the document's tags. Caught only because a test asserted the schema's stated
+  intent rather than its behaviour.
+- **Built a fake provider that quoted its own instructions back.** The zero-key demo answered
+  questions with the prompt's rules. Fixed to extract only from source blocks and to emit real
+  citation markers.
+- **Three silent successes in a row.** The singleton, the citation INSERT blocked by a missing RLS
+  policy, and seeded documents never being enqueued all failed with no error anywhere. The pattern
+  is the lesson: an unchecked return value is how a feature appears to work while doing nothing.
+
+**Verification that actually proved something**
+Mutation testing twice. Disabling RLS on `chunks` failed exactly the four chunk-related tests,
+including both retrieval paths. Breaking CORS failed the E2E. Both confirmed the tests fail for the
+right reason, which a passing test never demonstrates on its own.
+
+**Cost of a careless command**
+My setup script shelled out to `pnpm` from a process pnpm had launched. Corepack responded by
+installing pnpm globally and appending a `PNPM_HOME` block to `~/.zshrc`, after which pnpm took
+30+ seconds of CPU to print its own version. Reverted the shell change and switched the script to
+call local binaries directly, which is both faster and free of side effects. Verification for the
+rest of the session ran through `node_modules/.bin` rather than the package manager.
+
+**Judgment calls**
+- `"ui": "tui"` in turbo.json hangs when stdout is redirected, which breaks CI and any script.
+  Changed to `stream`.
+- CORS now allows both `localhost` and `127.0.0.1`. They are different origins to a browser, and a
+  reviewer may open either — the API tested fine with curl while the browser saw a blank page.
+- Stepped four dependencies back to settled releases after pnpm's supply-chain check flagged them as
+  published the same day.
+
+**Next:** eval harness with committed numbers, then PDF upload and the usage view.

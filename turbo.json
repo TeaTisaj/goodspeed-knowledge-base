@@ -1,27 +1,54 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "ui": "tui",
-  "globalDependencies": [".env", "tsconfig.base.json"],
-  "globalEnv": ["NODE_ENV"],
+  "ui": "stream",
+  "globalDependencies": [
+    ".env",
+    "tsconfig.base.json"
+  ],
+  "globalEnv": [
+    "NODE_ENV"
+  ],
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**"
+      ],
+      "env": [
+        "NEXT_PUBLIC_*",
+        "NODE_ENV"
+      ]
     },
     "dev": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": [
+        "NEXT_PUBLIC_*",
+        "NODE_ENV"
+      ]
     },
     "lint": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "outputs": []
     },
     "test": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "outputs": []
     }
   }

@@ -17,13 +17,17 @@
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:status": "supabase status",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "node scripts/seed.mjs",
+    "test:e2e": "playwright test",
+    "setup": "node scripts/setup.mjs",
+    "test:integration": "pnpm --filter @kb/api test:integration"
   },
   "devDependencies": {
     "prettier": "3.9.8",
     "supabase": "2.117.0",
     "turbo": "2.11.2",
     "typescript": "6.0.3",
-    "@supabase/supabase-js": "2.117.0"
+    "@supabase/supabase-js": "2.117.0",
+    "@playwright/test": "1.63.0"
   }
 }
