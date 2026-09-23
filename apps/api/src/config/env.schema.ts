@@ -57,6 +57,17 @@ export const envSchema = z
 
     AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+
+    // Retrieval. Defaults chosen so hybrid + RRF is the baseline and the
+    // reranker is opt-in, because it costs a model call and the eval harness is
+    // what decides whether it pays for itself.
+    RETRIEVAL_CANDIDATES: z.coerce.number().int().min(1).max(100).default(12),
+    RETRIEVAL_TOP_K: z.coerce.number().int().min(1).max(20).default(6),
+    AI_RERANK_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+    MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(8000),
   })
   // A real provider needs a key; `fake` deliberately needs nothing so the app
   // boots with zero credentials.

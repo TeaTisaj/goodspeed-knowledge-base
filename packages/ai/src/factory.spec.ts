@@ -110,11 +110,17 @@ describe('provider composition', () => {
     const chat = buildChatProvider({ provider: 'fake' });
     const res = await chat.chat({
       messages: [
-        { role: 'system', content: 'The deploy takes eight minutes end to end.' },
+        {
+          role: 'system',
+          content:
+            'Answer using only the numbered sources.\n\nSources:\n\n' +
+            '[1] Deploy runbook\nA deploy takes eight minutes end to end from merge to live.',
+        },
         { role: 'user', content: 'how long does a deploy take' },
       ],
     });
     expect(res.text).toMatch(/eight minutes/);
+    expect(res.text).toMatch(/\[1\]/);
   });
 
   it('wires the embedding cache through the stack', async () => {

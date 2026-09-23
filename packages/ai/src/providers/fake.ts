@@ -78,6 +78,33 @@ export function hashingVector(text: string, dims: number): number[] {
   return v.map((x) => x / norm);
 }
 
+interface ParsedSource {
+  number: number;
+  title: string;
+  body: string;
+}
+
+/**
+ * Extracts the numbered source blocks from a built prompt.
+ *
+ * Kept tolerant on purpose: if the prompt format changes and nothing matches,
+ * the caller returns a "no answer" response rather than quietly falling back to
+ * quoting the instructions.
+ */
+function parseSources(system: string): ParsedSource[] {
+  const marker = system.indexOf('Sources:');
+  if (marker === -1) return [];
+
+  const body = system.slice(marker + 'Sources:'.length);
+  const out: ParsedSource[] = [];
+  const pattern = /\[(\d{1,2})\]\s*([^\n]*)\n([\s\S]*?)(?=\n\[\d{1,2}\]\s|$)/g;
+
+  for (const m of body.matchAll(pattern)) {
+    out.push({ number: Number(m[1]), title: (m[2] ?? '').trim(), body: (m[3] ?? '').trim() });
+  }
+  return out;
+}
+
 export interface FakeChatOptions {
   id?: string;
   model?: string;
@@ -133,39 +160,60 @@ export class FakeChatProvider implements ChatProvider {
   }
 
   /**
-   * Extractive, not generative: it answers from the retrieved context in the
-   * prompt. That keeps the demo honest — a citation always points at text the
-   * answer actually used — and keeps faithfulness trivially satisfiable so
-   * eval failures point at retrieval rather than at the fake.
+   * Extractive, not generative: it answers from the retrieved sources in the
+   * prompt and cites them.
+   *
+   * Two details matter for the zero-key demo to be honest:
+   *
+   *  - Only the numbered source blocks are searched, never the instruction
+   *    preamble. Otherwise the "answer" is the system prompt read back, which
+   *    looks broken and tells a reviewer nothing.
+   *  - It emits real `[n]` citation markers, so the citation resolution and the
+   *    clickable-source UI are exercised without any API key.
    */
   private compose(request: ChatRequest): string {
     const question = [...request.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-    const context = request.messages.find((m) => m.role === 'system')?.content ?? '';
+    const system = request.messages.find((m) => m.role === 'system')?.content ?? '';
 
+    const sources = parseSources(system);
     const queryTerms = new Set(tokenize(question));
-    if (queryTerms.size === 0 || !context) {
-      return 'I could not find anything relevant in your documents to answer that.';
+
+    if (queryTerms.size === 0 || sources.length === 0) {
+      return 'I could not find anything in your documents that answers that.';
     }
 
-    const sentences = context
-      .split(/(?<=[.!?])\s+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 30);
+    const scored: { sentence: string; source: number; score: number }[] = [];
+    for (const source of sources) {
+      const sentences = source.body
+        .split(/(?<=[.!?])\s+/)
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0);
 
-    const scored = sentences
-      .map((s) => {
-        const terms = tokenize(s);
+      for (const sentence of sentences) {
+        const terms = tokenize(sentence);
+        // Filter on token count, not characters: "A deploy takes eight
+        // minutes." is 29 characters and is exactly the kind of short, factual
+        // sentence a user asks about.
+        if (terms.length < 4) continue;
         const overlap = terms.filter((t) => queryTerms.has(t)).length;
-        return { s, score: overlap / Math.sqrt(terms.length || 1) };
-      })
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3);
+        if (overlap === 0) continue;
+        scored.push({
+          sentence,
+          source: source.number,
+          score: overlap / Math.sqrt(terms.length),
+        });
+      }
+    }
 
     if (scored.length === 0) {
-      return 'I could not find anything relevant in your documents to answer that.';
+      return 'The sources provided do not contain an answer to that question.';
     }
-    return scored.map((x) => x.s).join(' ');
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored
+      .slice(0, 3)
+      .map((s) => `${s.sentence} [${s.source}]`)
+      .join(' ');
   }
 
   private estimateUsage(request: ChatRequest, output: string) {

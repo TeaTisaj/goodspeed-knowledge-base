@@ -18,5 +18,10 @@ export default tseslint.config(...base, {
     '@typescript-eslint/consistent-type-imports': 'off',
     '@typescript-eslint/no-useless-constructor': 'off',
     '@typescript-eslint/no-extraneous-class': 'off',
+    // Same root cause as the rule above: ESLint does not traverse decorator
+    // arguments, so a schema referenced only inside `@Param('id', { schema })`
+    // reads as an unused assignment. The value is genuinely used, at class
+    // definition time.
+    'no-useless-assignment': 'off',
   },
 });

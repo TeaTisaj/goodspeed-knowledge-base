@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AiModule } from './ai/ai.module.js';
+import { ChatModule } from './chat/chat.module.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 import { UserThrottlerGuard } from './common/user-throttler.guard.js';
 import { ConfigModule } from './config/config.module.js';
@@ -23,6 +24,7 @@ import { SupabaseModule } from './supabase/supabase.module.js';
     }),
     DocumentsModule,
     IngestionModule,
+    ChatModule,
   ],
   controllers: [HealthController],
   providers: [

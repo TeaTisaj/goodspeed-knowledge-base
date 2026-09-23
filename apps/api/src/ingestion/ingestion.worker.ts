@@ -35,6 +35,47 @@ export class IngestionWorker implements OnModuleInit {
       },
     );
     this.logger.log(`Worker listening (mode=${this.config.env.WORKER_MODE})`);
+
+    await this.reconcile();
+  }
+
+  /**
+   * Enqueues any document still sitting in `queued` on startup.
+   *
+   * A document reaches `queued` from three places: the API (which enqueues a
+   * job), the seed script (which does not), and a crash between the database
+   * write and the enqueue. Without this, seeded documents are never ingested
+   * and a reviewer sees an empty knowledge base with no error anywhere --
+   * which is exactly what happened before this existed.
+   *
+   * Safe to run on every boot because ingestion is idempotent: a document whose
+   * content hash is unchanged short-circuits before any work.
+   */
+  private async reconcile(): Promise<void> {
+    try {
+      const { data, error } = await this.supabase
+        .admin()
+        .from('documents')
+        .select('id, owner_id')
+        .eq('status', 'queued')
+        .limit(500);
+
+      if (error) {
+        this.logger.warn(`Reconcile skipped: ${error.message}`);
+        return;
+      }
+
+      const pending = (data ?? []) as { id: string; owner_id: string }[];
+      if (pending.length === 0) return;
+
+      for (const doc of pending) {
+        await this.queue.enqueueIngest({ documentId: doc.id, ownerId: doc.owner_id });
+      }
+      this.logger.log(`Reconciled ${pending.length} document(s) stuck in queued`);
+    } catch (e) {
+      // Reconciliation is best-effort; never block startup on it.
+      this.logger.warn(`Reconcile failed: ${(e as Error).message}`);
+    }
   }
 
   private async handle(job: Job<IngestJobData>): Promise<void> {

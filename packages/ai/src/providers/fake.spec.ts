@@ -65,3 +65,70 @@ describe('FakeEmbeddingProvider', () => {
     expect(res.embeddings).toHaveLength(2);
   });
 });
+
+describe('FakeChatProvider answer composition', () => {
+  const prompt = (sources: string) =>
+    `You answer questions using only the numbered sources below.
+
+Rules:
+- Cite every claim with the source number in square brackets, like [1].
+- If the sources do not contain the answer, say so plainly. Do not guess.
+
+Sources:
+
+${sources}`;
+
+  it('never quotes the instruction preamble back as the answer', async () => {
+    // Regression: extracting from the whole system message made the "answer"
+    // the rules text, which looks broken and tells a reviewer nothing.
+    const { FakeChatProvider } = await import('./fake.js');
+    const res = await new FakeChatProvider().chat({
+      messages: [
+        { role: 'system', content: prompt('[1] Runbook\nA deploy takes eight minutes.') },
+        { role: 'user', content: 'how long does a deploy take' },
+      ],
+    });
+    expect(res.text).not.toMatch(/Cite every claim/);
+    expect(res.text).not.toMatch(/Do not guess/);
+    expect(res.text).toMatch(/eight minutes/);
+  });
+
+  it('emits citation markers, so the zero-key demo exercises citations', async () => {
+    const { FakeChatProvider } = await import('./fake.js');
+    const res = await new FakeChatProvider().chat({
+      messages: [
+        {
+          role: 'system',
+          content: prompt(
+            '[1] Runbook\nA deploy takes eight minutes.\n\n[2] Finance\nRevenue was four million dollars.',
+          ),
+        },
+        { role: 'user', content: 'what was revenue' },
+      ],
+    });
+    expect(res.text).toMatch(/\[2\]/);
+    expect(res.text).toMatch(/four million/);
+  });
+
+  it('says so plainly when the sources do not answer the question', async () => {
+    const { FakeChatProvider } = await import('./fake.js');
+    const res = await new FakeChatProvider().chat({
+      messages: [
+        { role: 'system', content: prompt('[1] Runbook\nA deploy takes eight minutes.') },
+        { role: 'user', content: 'unladen swallow airspeed velocity migratory' },
+      ],
+    });
+    expect(res.text).toMatch(/do not contain|could not find/i);
+  });
+
+  it('returns a no-answer response when there are no sources at all', async () => {
+    const { FakeChatProvider } = await import('./fake.js');
+    const res = await new FakeChatProvider().chat({
+      messages: [
+        { role: 'system', content: 'You answer questions.\n\nSources:\n\n(none found)' },
+        { role: 'user', content: 'anything' },
+      ],
+    });
+    expect(res.text).toMatch(/could not find|do not contain/i);
+  });
+});
