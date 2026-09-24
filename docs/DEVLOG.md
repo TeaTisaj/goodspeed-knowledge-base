@@ -124,3 +124,50 @@ rest of the session ran through `node_modules/.bin` rather than the package mana
   published the same day.
 
 **Next:** eval harness with committed numbers, then PDF upload and the usage view.
+
+---
+
+## 2026-09-23/24 — M7 through M9. Eval, PDF upload, usage view.
+
+**Shipped:** retrieval eval harness with published results (M7), PDF and text upload (M8), usage and
+cost view (M9). 233 unit tests, 28 integration, 3 E2E.
+
+**The eval was built twice, and the first one was worthless**
+Five short documents produced five chunks, so every configuration scored 100% on hit@5. It looked
+like a result and measured nothing — worse than having no harness, because a table of 100%s reads as
+evidence. Rebuilt with eight documents averaging ~1,240 tokens, 35 questions, and **chunk-level
+scoring**: a hit requires the returned chunk to actually contain the answer span, since retrieving
+the right document but the wrong chunk still produces an unanswerable prompt.
+
+The rebuilt version immediately contradicted a default: 1024-token chunks score 97% hit@1 against
+512's 89%. Rather than either ignoring it or changing the default, the table now reports **top-5 as
+a share of corpus** beside it — at 1024 there are only 16 chunks, so a top-5 result set is 31% of
+everything, against 11% at 256. Part of the "improvement" is simply an easier problem. The default
+stays 512 for reasons the harness cannot measure: context budget and citation precision.
+
+Hybrid also does not beat keyword search here, and the results say so plainly. The default embedder
+is a hashing vectorizer whose "semantic" similarity *is* lexical, so fusing two lexical signals
+cannot add a semantic one. The ablation needs a real embedding model to mean anything.
+
+**Where AI was wrong**
+- **Guessed a locator that matched two elements.** "Tokens" is both a stat label and a column
+  header; the E2E failed on a strict-mode violation rather than a real defect.
+- **Wrote an eval that could not fail.** Covered above, and the most useful mistake of the session:
+  the instinct to check *whether a test can fail* now applies to measurement harnesses too.
+- **Assumed `@types/multer` was needed** for one interface with five fields. Replaced with a local
+  declaration.
+
+**Verification that earned its place**
+The eval gate was itself tested: it fails at a 99% threshold and passes at 85%, so `--min-hit-rate`
+in CI genuinely gates. PDF extraction was verified against a **real generated PDF** rather than a
+mocked extractor, which is what proved the hyphenation and line-unwrapping cleanup actually fires.
+
+**Environment**
+pnpm degraded badly on this machine after the earlier accidental corepack global install — 30+
+seconds of CPU to print its own version. Verification for this stretch ran through
+`node_modules/.bin` directly, and `unpdf` was installed from its registry tarball. The project's
+pnpm scripts are unchanged and correct; this was local damage, not a repo problem, and the devlog
+records it because "it works on my machine" cuts both ways.
+
+**Not done:** the live demo URL (M10) needs Vercel and hosted-Supabase credentials I do not have.
+Everything else in the plan has shipped.

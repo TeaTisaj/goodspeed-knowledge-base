@@ -86,6 +86,40 @@ test('sign up, create a document, ingest it, and get a cited answer', async ({ p
   });
 });
 
+test('uploading a text file creates a document and records usage', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(EMAIL);
+  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: /^sign in$/i }).click();
+  await expect(page).toHaveURL(/\/documents/, { timeout: 30_000 });
+
+  // Upload through the real file input rather than calling the API directly,
+  // so the multipart boundary the browser generates is exercised.
+  await page.setInputFiles('input[type="file"]', {
+    name: 'security-policy.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(
+      '# Security policy\n\nProduction access requires hardware two-factor authentication.\n' +
+        'A vendor security review takes about two weeks to complete.\n',
+    ),
+  });
+
+  await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}/, { timeout: 30_000 });
+  // The title comes from the markdown heading, not the filename.
+  await expect(page.getByLabel('Title')).toHaveValue('Security policy');
+  await expect(page.getByText('Ready')).toBeVisible({ timeout: 45_000 });
+
+  // Usage should now show the embedding calls that ingestion made.
+  await page.getByRole('link', { name: 'Usage' }).click();
+  await expect(page).toHaveURL(/\/usage/);
+  // Specific locators: "Tokens" appears as both a stat label and a column header.
+  await expect(page.getByRole('columnheader', { name: 'Tokens' })).toBeVisible({ timeout: 30_000 });
+  // Ingestion embeds the uploaded document, so an embed row must exist.
+  await expect(page.getByRole('cell', { name: 'embed' }).first()).toBeVisible({ timeout: 30_000 });
+  // And the token count must be non-zero, not just present.
+  await expect(page.getByRole('table')).toContainText(/\d/);
+});
+
 test('a signed-out visitor cannot reach the documents page', async ({ page }) => {
   await page.context().clearCookies();
   await page.goto('/documents');
