@@ -1,6 +1,6 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - 'apps/*'
+  - 'packages/*'
 
 # Native postinstall scripts are blocked by default in pnpm 10+. Allow only the
 # packages that genuinely build a native binary, so a reviewer's install is

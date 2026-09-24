@@ -40,16 +40,33 @@ export function Button({
  * answer about this document yet" is the first question a user has.
  */
 export function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; className: string }> = {
-    queued: { label: 'Queued', className: 'text-[var(--color-ink-muted)]' },
-    processing: { label: 'Processing', className: 'text-[var(--color-accent)]' },
-    ready: { label: 'Ready', className: 'text-[var(--color-success)]' },
-    failed: { label: 'Failed', className: 'text-[var(--color-danger)]' },
+  const map: Record<string, { label: string; className: string; hint: string }> = {
+    queued: {
+      label: 'Queued',
+      className: 'text-[var(--color-ink-muted)]',
+      hint: 'Waiting for the indexer to pick it up. Not searchable yet.',
+    },
+    processing: {
+      label: 'Processing',
+      className: 'text-[var(--color-accent)]',
+      hint: 'Being split into chunks and embedded right now.',
+    },
+    ready: {
+      label: 'Ready',
+      className: 'text-[var(--color-success)]',
+      hint: 'Indexed. Chat can cite this document.',
+    },
+    failed: {
+      label: 'Failed',
+      className: 'text-[var(--color-danger)]',
+      hint: 'Indexing failed. Saving the document again retries it.',
+    },
   };
   const s = map[status] ?? map.queued!;
 
   return (
     <span
+      title={s.hint}
       className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${s.className}`}
     >
       {(status === 'queued' || status === 'processing') && (
@@ -85,6 +102,19 @@ export function ErrorBanner({ message, onRetry }: { message: string; onRetry?: (
       {onRetry && (
         <button onClick={onRetry} className="shrink-0 text-sm underline">
           Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function SuccessBanner({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-md border border-[var(--color-success)] bg-[var(--color-surface-muted)] px-3 py-2">
+      <p className="text-sm text-[var(--color-success)]">{message}</p>
+      {onDismiss && (
+        <button onClick={onDismiss} className="shrink-0 text-sm underline">
+          Dismiss
         </button>
       )}
     </div>

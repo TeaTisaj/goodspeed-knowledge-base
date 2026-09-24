@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@12.5.1",
   "engines": {
-    "node": ">=24.15.0 <25 || >=26"
+    "node": "^22.22.3 || ^24.15.0 || >=26"
   },
   "scripts": {
     "build": "turbo run build",
@@ -11,6 +11,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:live": "pnpm --filter @kb/ai test:live",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "db:start": "supabase start",
@@ -18,8 +19,9 @@
     "db:reset": "supabase db reset",
     "db:status": "supabase status",
     "db:seed": "node scripts/seed.mjs",
+    "reembed": "node scripts/reembed.mjs",
     "test:e2e": "playwright test",
-    "setup": "node scripts/setup.mjs",
+    "bootstrap": "node scripts/setup.mjs",
     "test:integration": "pnpm --filter @kb/api test:integration",
     "eval": "node eval/run.mjs"
   },

@@ -54,7 +54,9 @@ export function cleanExtractedText(raw: string): string {
   // Collapse runs of spaces introduced by column extraction.
   text = text.replace(/[ \t]{2,}/g, ' ');
 
-  return stripRepeatedLines(text).replace(/\n{3,}/g, '\n\n').trim();
+  return stripRepeatedLines(text)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**

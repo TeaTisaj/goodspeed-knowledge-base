@@ -5,17 +5,23 @@ import {
   OpenAICompatibleEmbeddingProvider,
 } from './providers/openai-compatible.js';
 import { CHAT_PRESETS, EMBEDDING_PRESETS } from './presets.js';
+import { runChatContract, runEmbeddingContract } from './testing/contract.js';
 import type { ChatProvider, EmbeddingProvider } from './types.js';
 
 /**
- * The contract suite.
+ * The contract suite, offline.
  *
- * "Genuinely swappable" is a claim, and a README cannot test a claim. This
- * runs one shared set of expectations against every implementation, so any
- * provider that violates the interface fails here rather than in production.
+ * The assertions themselves live in ./testing/contract.ts and are shared with
+ * the live suite (live/providers.spec.ts). What this file owns is the stubbed
+ * transport: every preset is exercised against a fake `fetch`, so the suite
+ * stays hermetic -- no keys, no network, deterministic in CI -- while still
+ * covering every provider the app ships a preset for.
  *
- * Network-backed providers are exercised against a stubbed `fetch`, so the
- * suite stays hermetic: no keys, no network, deterministic in CI.
+ * What a stub can and cannot prove is worth being honest about. It proves the
+ * adapter parses the spec's response shapes, chunks batches, orders vectors by
+ * `index`, and maps finish reasons and errors. It cannot prove a given vendor
+ * actually returns those shapes. That is what `pnpm test:live` is for, and the
+ * two suites share a contract so the difference is visible rather than assumed.
  */
 
 function stubFetch(handler: (url: string, init?: RequestInit) => Response): typeof fetch {
@@ -37,14 +43,14 @@ function sseResponse(chunks: unknown[]): Response {
   return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
 }
 
+const ANSWER = 'bluefin';
+
 const chatCompletion = {
   id: 'c1',
   object: 'chat.completion',
   created: 0,
   model: 'test',
-  choices: [
-    { index: 0, message: { role: 'assistant', content: 'Hello there' }, finish_reason: 'stop' },
-  ],
+  choices: [{ index: 0, message: { role: 'assistant', content: ANSWER }, finish_reason: 'stop' }],
   usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
 };
 
@@ -54,14 +60,14 @@ const streamChunks = [
     object: 'chat.completion.chunk',
     created: 0,
     model: 'test',
-    choices: [{ index: 0, delta: { content: 'Hello' }, finish_reason: null }],
+    choices: [{ index: 0, delta: { content: 'blue' }, finish_reason: null }],
   },
   {
     id: 'c1',
     object: 'chat.completion.chunk',
     created: 0,
     model: 'test',
-    choices: [{ index: 0, delta: { content: ' there' }, finish_reason: null }],
+    choices: [{ index: 0, delta: { content: 'fin' }, finish_reason: null }],
   },
   {
     id: 'c1',
@@ -99,6 +105,30 @@ function networkChatProvider(presetId: keyof typeof CHAT_PRESETS): ChatProvider 
   return provider;
 }
 
+/**
+ * Deterministic pseudo-vectors, unit length, seeded by the input text.
+ *
+ * Returning a constant vector for every input would let the adapter pass while
+ * mapping every row to the same embedding, so the stub varies with the text --
+ * which is what makes the "distinct inputs differ" and "same input repeats"
+ * assertions in the shared contract mean something here.
+ */
+function stubVector(text: string, dims: number): number[] {
+  let seed = 0;
+  for (let i = 0; i < text.length; i++) seed = (seed * 31 + text.charCodeAt(i)) >>> 0;
+  const out = new Array<number>(dims);
+  let norm = 0;
+  for (let i = 0; i < dims; i++) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const v = (seed / 0xffffffff) * 2 - 1;
+    out[i] = v;
+    norm += v * v;
+  }
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < dims; i++) out[i] = out[i]! / norm;
+  return out;
+}
+
 function networkEmbeddingProvider(presetId: keyof typeof EMBEDDING_PRESETS): EmbeddingProvider {
   const preset = EMBEDDING_PRESETS[presetId];
   const dims = preset.capabilities.dimensions;
@@ -116,146 +146,57 @@ function networkEmbeddingProvider(presetId: keyof typeof EMBEDDING_PRESETS): Emb
     return jsonResponse({
       object: 'list',
       model: preset.defaultModel,
-      data: inputs.map((_, i) => ({
-        object: 'embedding',
-        index: i,
-        embedding: new Array(dims).fill(0).map((_, j) => (j === 0 ? 1 : 0)),
-      })),
+      // Returned out of order on purpose: the spec carries an `index` and does
+      // not promise ordering, and the adapter sorts by it. A stub that replies
+      // in order would never catch the day a provider does not.
+      data: inputs
+        .map((text, i) => ({
+          object: 'embedding',
+          index: i,
+          embedding: stubVector(text, body.dimensions ?? dims),
+        }))
+        .reverse(),
       usage: { prompt_tokens: 5, total_tokens: 5 },
     });
   });
   return provider;
 }
 
-// --- the shared contract --------------------------------------------------
+// --- every preset, plus the offline fake ----------------------------------
 
-const chatImplementations: [string, () => ChatProvider][] = [
-  ['fake', () => new FakeChatProvider()],
-  ['openai (stubbed)', () => networkChatProvider('openai')],
-  ['groq (stubbed)', () => networkChatProvider('groq')],
-  ['together (stubbed)', () => networkChatProvider('together')],
-  ['openrouter (stubbed)', () => networkChatProvider('openrouter')],
-  ['ollama (stubbed)', () => networkChatProvider('ollama')],
-];
+// Derived from the preset table, not restated. A hand-written list is how the
+// suite silently stops covering what the app actually ships: adding a preset
+// row is the documented way to add a provider, and it would otherwise add an
+// untested one. Enumerating means a new row cannot be added without also
+// having to satisfy the contract.
+runChatContract('fake', () => new FakeChatProvider());
+for (const id of Object.keys(CHAT_PRESETS) as (keyof typeof CHAT_PRESETS)[]) {
+  runChatContract(`${id} (stubbed)`, () => networkChatProvider(id));
+}
 
-describe.each(chatImplementations)('ChatProvider contract: %s', (_name, make) => {
-  it('exposes a stable identity', () => {
-    const p = make();
-    expect(typeof p.id).toBe('string');
-    expect(p.id.length).toBeGreaterThan(0);
-    expect(typeof p.model).toBe('string');
-  });
+runEmbeddingContract('fake', () => new FakeEmbeddingProvider());
+for (const id of Object.keys(EMBEDDING_PRESETS) as (keyof typeof EMBEDDING_PRESETS)[]) {
+  runEmbeddingContract(`${id} (stubbed)`, () => networkEmbeddingProvider(id));
+}
 
-  it('declares its capabilities', () => {
-    const c = make().capabilities;
-    expect(typeof c.streaming).toBe('boolean');
-    expect(typeof c.toolCalls).toBe('boolean');
-    expect(c.maxContextTokens).toBeGreaterThan(0);
-  });
+// --- coverage, asserted ---------------------------------------------------
 
-  it('returns text, usage and a finish reason from chat()', async () => {
-    const res = await make().chat({
-      messages: [
-        {
-          role: 'system',
-          content: 'Hello there, this is context about greetings and salutations.',
-        },
-        { role: 'user', content: 'hello greetings' },
-      ],
-    });
-    expect(typeof res.text).toBe('string');
-    expect(res.text.length).toBeGreaterThan(0);
-    expect(res.usage.totalTokens).toBeGreaterThan(0);
-    expect(['stop', 'length', 'content_filter', 'error', 'unknown']).toContain(res.finishReason);
-    expect(res.provider.id).toBe(make().id);
-  });
-
-  it('streams text deltas and terminates with exactly one done event', async () => {
-    const p = make();
-    const events = [];
-    for await (const e of p.streamChat({
-      messages: [
-        {
-          role: 'system',
-          content: 'Hello there, this is context about greetings and salutations.',
-        },
-        { role: 'user', content: 'hello greetings' },
-      ],
-    })) {
-      events.push(e);
-    }
-
-    const done = events.filter((e) => e.type === 'done');
-    expect(done).toHaveLength(1);
-    expect(events.at(-1)?.type).toBe('done');
-
-    const text = events
-      .filter((e) => e.type === 'text')
-      .map((e) => (e as { delta: string }).delta)
-      .join('');
-    expect(text.length).toBeGreaterThan(0);
-  });
-
-  it('reports usage on the stream when it claims to support it', async () => {
-    const p = make();
-    if (!p.capabilities.streamingUsage) return;
-
-    const events = [];
-    for await (const e of p.streamChat({
-      messages: [
-        {
-          role: 'system',
-          content: 'Hello there, this is context about greetings and salutations.',
-        },
-        { role: 'user', content: 'hello greetings' },
-      ],
-    })) {
-      events.push(e);
-    }
-    expect(events.some((e) => e.type === 'usage')).toBe(true);
-  });
-});
-
-const embeddingImplementations: [string, () => EmbeddingProvider][] = [
-  ['fake', () => new FakeEmbeddingProvider()],
-  ['openai (stubbed)', () => networkEmbeddingProvider('openai')],
-  ['together (stubbed)', () => networkEmbeddingProvider('together')],
-  ['openrouter (stubbed)', () => networkEmbeddingProvider('openrouter')],
-  ['ollama (stubbed)', () => networkEmbeddingProvider('ollama')],
-];
-
-describe.each(embeddingImplementations)('EmbeddingProvider contract: %s', (_name, make) => {
-  it('declares dimensions and a batch ceiling', () => {
-    const c = make().capabilities;
-    expect(c.dimensions).toBeGreaterThan(0);
-    expect(c.maxBatchSize).toBeGreaterThan(0);
-  });
-
-  it('returns one vector per input, in input order', async () => {
-    const p = make();
-    const res = await p.embed({ texts: ['alpha text', 'beta text', 'gamma text'] });
-    expect(res.embeddings).toHaveLength(3);
-    for (const e of res.embeddings) {
-      expect(e).toHaveLength(p.capabilities.dimensions);
+describe('contract coverage', () => {
+  /**
+   * The suite above loops over the preset tables, so this cannot drift by
+   * omission -- but it can drift by deletion, and a deleted loop is a silent
+   * loss of coverage that still shows green. Naming the providers the
+   * assignment calls out means removing one fails here.
+   */
+  it('covers every provider the brief names', () => {
+    for (const id of ['openai', 'groq', 'together', 'openrouter', 'ollama']) {
+      expect(Object.keys(CHAT_PRESETS)).toContain(id);
     }
   });
 
-  it('handles an empty batch without calling the provider', async () => {
-    const res = await make().embed({ texts: [] });
-    expect(res.embeddings).toEqual([]);
-  });
-
-  it('is deterministic: the same text yields the same vector', async () => {
-    const p = make();
-    const a = await p.embed({ texts: ['stability matters'] });
-    const b = await p.embed({ texts: ['stability matters'] });
-    expect(a.embeddings[0]).toEqual(b.embeddings[0]);
-  });
-
-  it('emits unit-length vectors, so cosine and inner product agree', async () => {
-    const p = make();
-    const res = await p.embed({ texts: ['normalisation check'] });
-    const norm = Math.sqrt(res.embeddings[0]!.reduce((s, x) => s + x * x, 0));
-    expect(norm).toBeCloseTo(1, 5);
+  it('exercises each preset for chat, and each embedding preset for embeddings', () => {
+    expect(Object.keys(CHAT_PRESETS).length).toBeGreaterThanOrEqual(5);
+    // Groq is absent here by design: it exposes no embeddings endpoint.
+    expect(Object.keys(EMBEDDING_PRESETS)).not.toContain('groq');
   });
 });

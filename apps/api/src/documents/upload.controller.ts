@@ -1,18 +1,7 @@
-import {
-  Controller,
-  Post,
-  UploadedFile,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Controller, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Document } from '@kb/contracts';
-import {
-  ExtractionError,
-  MAX_UPLOAD_BYTES,
-  SUPPORTED_MIME_TYPES,
-  extractText,
-} from '@kb/rag';
+import { ExtractionError, MAX_UPLOAD_BYTES, SUPPORTED_MIME_TYPES, extractText } from '@kb/rag';
 import { SupabaseAuthGuard, type AuthenticatedUser } from '../common/auth.guard.js';
 import { CurrentUser } from '../common/current-user.decorator.js';
 import { AppError } from '../common/errors.js';

@@ -162,17 +162,21 @@ for (const mode of ['semantic', 'keyword', 'hybrid']) {
 
 console.log(`\nChunk size (hybrid)`);
 console.log(headerWithShare);
+/** Chunk counts per size, so the commentary below quotes the run, not a memory. */
+const sizeChunkCounts = {};
 for (const maxTokens of [256, 512, 1024]) {
   const idx = await buildIndex(embedder, { maxTokens, overlapTokens: Math.round(maxTokens / 8) });
   const r = await evaluate(embedder, idx, 'hybrid');
   // Larger chunks mean fewer of them, so a fixed top-5 covers a bigger share of
   // the corpus. Without this column the chunk-size table reads as "bigger is
   // better" when part of the effect is simply an easier retrieval problem.
+  sizeChunkCounts[maxTokens] = idx.chunks.length;
   console.log(row(`${maxTokens} tok`, r, `${idx.chunks.length} chunks`, 5 / idx.chunks.length));
 }
 console.log(
   `  \n  Read the last column before the others: at 1024 tokens a top-5 result set is` +
-    `\n  ${pct(5 / 16)} of the whole corpus, against ${pct(5 / 46)} at 256. Some of the apparent` +
+    `\n  ${pct(5 / sizeChunkCounts[1024])} of the whole corpus, against ` +
+    `${pct(5 / sizeChunkCounts[256])} at 256. Some of the apparent` +
     `\n  advantage of larger chunks is that there is simply less to discriminate between.`,
 );
 

@@ -34,19 +34,28 @@ describe('buildPrompt', () => {
     expect(used).toEqual([]);
   });
 
+  // Budgets here are expressed as "instructions plus N tokens of room", not as
+  // absolute numbers. The preamble is a real and growing share of the budget,
+  // so an absolute ceiling silently stops testing what it says it tests the
+  // next time the prompt is reworded -- it starts fitting nothing at all, and
+  // "the big chunk was dropped" passes for the wrong reason.
+  const overhead = Math.ceil(buildPrompt([]).system.length / 4);
+
   it('drops sources that do not fit rather than truncating them', () => {
     // A half-sentence source invites a citation pointing at text the model
     // never saw.
     const big = chunk(1, 'x'.repeat(4000));
     const small = chunk(2, 'short');
-    const { used } = buildPrompt([big, small], { maxContextTokens: 200 });
+    const { used } = buildPrompt([big, small], { maxContextTokens: overhead + 60 });
 
     expect(used.map((u) => u.id)).toEqual(['chunk-2']);
   });
 
   it('renumbers so citation numbers always match what the model was shown', () => {
     const big = chunk(1, 'x'.repeat(4000));
-    const { system, used } = buildPrompt([big, chunk(2), chunk(3)], { maxContextTokens: 300 });
+    const { system, used } = buildPrompt([big, chunk(2), chunk(3)], {
+      maxContextTokens: overhead + 60,
+    });
     expect(system).toContain('[1] Document 2');
     expect(used[0]?.id).toBe('chunk-2');
   });

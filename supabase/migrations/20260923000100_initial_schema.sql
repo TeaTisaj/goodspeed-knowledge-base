@@ -67,6 +67,14 @@ create table public.chunks (
   embedding_model text not null,
 
   -- Generated, so it can never drift from `content`.
+  --
+  -- English-only, and deliberately so rather than by oversight: a generated
+  -- column needs an IMMUTABLE expression, so the text search configuration has
+  -- to be a literal and cannot be read from a setting. Supporting another
+  -- language means either a second generated column or a per-document language
+  -- column plus a rebuild of this one -- a real migration with a full reindex,
+  -- not a config change. Documented here because "why is search worse in
+  -- German" is otherwise a long afternoon.
   fts            tsvector generated always as (to_tsvector('english', content)) stored,
 
   metadata       jsonb not null default '{}'::jsonb,

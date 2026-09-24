@@ -125,6 +125,10 @@ export class IngestionWorker implements OnModuleInit {
 
     const jobId = (jobRow as { id: string } | null)?.id;
 
+    // Each job gets its own usage bucket. The worker runs jobs concurrently,
+    // so a shared buffer would bill one owner for another's embeddings.
+    const usageEvents = this.ai.beginUsageScope();
+
     try {
       const outcome = await this.ingestion.ingest(documentId);
 
@@ -141,7 +145,7 @@ export class IngestionWorker implements OnModuleInit {
       }
 
       // Embedding cost belongs to the document's owner, not the worker.
-      void this.usage.record(ownerId, this.ai.drainUsage());
+      void this.usage.record(ownerId, usageEvents.splice(0));
 
       this.logger.log(
         outcome.skipped
@@ -151,6 +155,8 @@ export class IngestionWorker implements OnModuleInit {
       );
     } catch (error) {
       const message = (error as Error).message;
+      // A failed job still embedded whatever it got through before failing.
+      void this.usage.record(ownerId, usageEvents.splice(0));
       if (jobId) {
         await db
           .from('ingestion_jobs')

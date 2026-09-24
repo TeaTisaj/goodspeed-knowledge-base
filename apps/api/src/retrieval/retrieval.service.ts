@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { RetrievedChunk } from '@kb/rag';
 import { AiService } from '../ai/ai.service.js';
+import { AppError } from '../common/errors.js';
 import { ConfigService } from '../config/config.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
 
@@ -73,8 +74,13 @@ export class RetrievalService {
 
     const { data, error } = await rpc;
     if (error) {
+      // Raised, not swallowed. Returning [] here made a database failure
+      // indistinguishable from "your documents do not cover this" -- the user
+      // was told their corpus had no answer when in fact retrieval never ran.
+      // The chat stream turns this into an `error` event; the honest outcome is
+      // "something broke", not a confident refusal.
       this.logger.error(`Retrieval failed: ${error.message}`);
-      return [];
+      throw AppError.internal(`Retrieval failed: ${error.message}`);
     }
 
     const rows = (data ?? []) as SearchRow[];

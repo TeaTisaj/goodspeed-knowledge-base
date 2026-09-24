@@ -101,14 +101,19 @@ export default function UsagePage() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={`${r.provider}-${r.model}-${r.operation}`} className="border-b last:border-0">
+                  <tr
+                    key={`${r.provider}-${r.model}-${r.operation}`}
+                    className="border-b last:border-0"
+                  >
                     <td className="p-2">
                       <span className="font-medium">{r.provider}</span>
                       <span className="text-[var(--color-ink-muted)]"> / {r.model}</span>
                     </td>
                     <td className="p-2 text-[var(--color-ink-muted)]">{r.operation}</td>
                     <td className="p-2 text-right tabular-nums">{r.calls.toLocaleString()}</td>
-                    <td className="p-2 text-right tabular-nums">{r.totalTokens.toLocaleString()}</td>
+                    <td className="p-2 text-right tabular-nums">
+                      {r.totalTokens.toLocaleString()}
+                    </td>
                     <td className="p-2 text-right tabular-nums">
                       {r.avgLatencyMs === null ? '—' : `${r.avgLatencyMs}ms`}
                     </td>
@@ -133,8 +138,9 @@ export default function UsagePage() {
           {totals.anyUnpriced && (
             <p className="text-xs text-[var(--color-ink-muted)]">
               Rows marked <span className="font-medium">n/a</span> use a model with no published
-              price in the pricing table, so their cost is unknown rather than zero. Token counts for
-              non-OpenAI models are approximate — they are measured with OpenAI&apos;s tokenizer.
+              price in the pricing table, so their cost is unknown rather than zero. Token counts
+              for non-OpenAI models are approximate — they are measured with OpenAI&apos;s
+              tokenizer.
             </p>
           )}
         </>

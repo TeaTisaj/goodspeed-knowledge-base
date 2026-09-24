@@ -75,20 +75,22 @@ AI layer (M2), chunking and fusion (M3), documents and background ingestion (M4)
 streaming chat (M5), the Next.js UI (M6). 195 unit tests, 28 integration, 2 E2E.
 
 **Where AI accelerated things**
+
 - Version research paid off repeatedly. TypeScript 7 ships no compiler API so `nest build` cannot
   run on it; NestJS 12 is ESM-only so CommonJS consumption needs a resolution mode TypeScript 6
   already deprecates; Next 16 removed `next lint`. All three would have been discovered painfully.
 - Reading the actual `.d.ts` files rather than guessing APIs. `StandardSchemaValidationPipe` takes
-  the schema on the *parameter decorator*, not the pipe constructor — I had guessed wrong, and the
+  the schema on the _parameter decorator_, not the pipe constructor — I had guessed wrong, and the
   type definitions settled it in one look.
 - Writing tests that encode intent rather than implementation. Several caught real bugs immediately.
 
 **Where AI was wrong, and what it cost**
+
 - **Guessed API shapes instead of checking.** pg-boss v12 has no default export, `createQueue` does
   not take a `name` in its options, and `@eslint/js` does not track ESLint's version number. Each
   was a build failure that a thirty-second look at the types would have prevented.
 - **Optimised before measuring, and broke correctness.** Added a pg-boss `singletonKey` to debounce
-  rapid saves. It enforces uniqueness across *all* job states including `completed`, so after a
+  rapid saves. It enforces uniqueness across _all_ job states including `completed`, so after a
   document's first ingestion every later enqueue returned null and the document could never be
   re-ingested — silently, with nothing logged. The debounce protected against a problem that does
   not exist at single-digit jobs per minute.
@@ -116,6 +118,7 @@ call local binaries directly, which is both faster and free of side effects. Ver
 rest of the session ran through `node_modules/.bin` rather than the package manager.
 
 **Judgment calls**
+
 - `"ui": "tui"` in turbo.json hangs when stdout is redirected, which breaks CI and any script.
   Changed to `stream`.
 - CORS now allows both `localhost` and `127.0.0.1`. They are different origins to a browser, and a
@@ -146,14 +149,15 @@ everything, against 11% at 256. Part of the "improvement" is simply an easier pr
 stays 512 for reasons the harness cannot measure: context budget and citation precision.
 
 Hybrid also does not beat keyword search here, and the results say so plainly. The default embedder
-is a hashing vectorizer whose "semantic" similarity *is* lexical, so fusing two lexical signals
+is a hashing vectorizer whose "semantic" similarity _is_ lexical, so fusing two lexical signals
 cannot add a semantic one. The ablation needs a real embedding model to mean anything.
 
 **Where AI was wrong**
+
 - **Guessed a locator that matched two elements.** "Tokens" is both a stat label and a column
   header; the E2E failed on a strict-mode violation rather than a real defect.
 - **Wrote an eval that could not fail.** Covered above, and the most useful mistake of the session:
-  the instinct to check *whether a test can fail* now applies to measurement harnesses too.
+  the instinct to check _whether a test can fail_ now applies to measurement harnesses too.
 - **Assumed `@types/multer` was needed** for one interface with five fields. Replaced with a local
   declaration.
 

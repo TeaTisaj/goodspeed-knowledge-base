@@ -54,6 +54,16 @@ export const streamEventSchema = z.discriminatedUnion('type', [
     type: z.literal('status'),
     stage: z.enum(['condensing', 'retrieving', 'generating']),
   }),
+  /**
+   * Candidate sources placed in the prompt, sent before the answer so the UI
+   * can show them while text streams.
+   */
+  z.object({ type: z.literal('sources'), sources: z.array(citationSchema) }),
+  /**
+   * The sources the model actually cited, sent once the answer is complete.
+   * Always a subset of `sources`, and it is what gets persisted -- the two are
+   * separate events so the live view and a reloaded conversation agree.
+   */
   z.object({ type: z.literal('citations'), citations: z.array(citationSchema) }),
   z.object({ type: z.literal('token'), delta: z.string() }),
   z.object({

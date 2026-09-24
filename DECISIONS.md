@@ -68,13 +68,14 @@ Service-role credentials are held by the ingestion worker only.
 
 _(Further entries — chunking, embedding model, retrieval, schema, queue, caching, workflow vs agent
 — land as those milestones complete.)_
+
 ## D4. The API is a native ESM package
 
 **Chosen:** `"type": "module"` in `apps/api`, `module`/`moduleResolution: NodeNext`.
 **Rejected:** CommonJS with `moduleResolution: Node10`.
 
 NestJS 12 ships ESM-only packages. A CommonJS app can consume them through `require(esm)` at
-runtime, but TypeScript *statically* rejects it (TS1479), and the only way to silence that is
+runtime, but TypeScript _statically_ rejects it (TS1479), and the only way to silence that is
 `moduleResolution: Node10` — which TypeScript 6 already deprecates and TypeScript 7 removes. Going
 ESM resolves both at once and keeps the project TS7-ready. `baseUrl` was dropped for the same reason.
 
@@ -142,7 +143,7 @@ What actually breaks on a provider swap is the capability surface:
 - `text-embedding-3-large` emits 3072 dims, above pgvector's 2,000-dim HNSW ceiling
 
 Each is now a boot-time failure with a message naming the fix. Configuring Groq for embeddings says
-so *and* suggests pairing it with OpenAI or Ollama, rather than producing a 404 mid-ingestion. The
+so _and_ suggests pairing it with OpenAI or Ollama, rather than producing a 404 mid-ingestion. The
 embedding provider also verifies returned vector width against the configured dimension, so a model
 mismatch is caught at the provider rather than as an opaque pgvector error.
 
@@ -186,8 +187,8 @@ property is the entire point.
 Two later fixes, after seeing its output in the real pipeline: it extracts only from the **numbered
 source blocks**, never the instruction preamble (the "answer" was previously the prompt's rules read
 back), and it emits real `[n]` citation markers so citation resolution and the clickable-source UI
-are exercised with no key. Its sentence filter is token-based, not character-based: *"A deploy takes
-eight minutes."* is 29 characters and is exactly the kind of short factual sentence users ask about.
+are exercised with no key. Its sentence filter is token-based, not character-based: _"A deploy takes
+eight minutes."_ is 29 characters and is exactly the kind of short factual sentence users ask about.
 
 ---
 
@@ -212,7 +213,7 @@ recursive; Chroma's benchmark puts it at 85–90% recall versus 91–92% — a 2
 compute. One January 2026 analysis found overlap provided no measurable benefit at all.
 
 So the defensible position is not "512 is correct", it is "512 is the consensus default, the
-parameters are configurable, and the eval harness measures them against *our* corpus." Semantic
+parameters are configurable, and the eval harness measures them against _our_ corpus." Semantic
 chunking is not ruled out on principle — it is not adopted on contested evidence.
 
 The separator hierarchy matters more than the number: a boundary should fall where a human would see
@@ -236,7 +237,7 @@ makes a one-paragraph edit touch two chunks.
 
 Measured end to end: editing one section of a 28-section document gave +1 new, 2 reused, -1 removed.
 
-Duplicate text within one document maps to a *queue* of rows, not a single row, so a repeated
+Duplicate text within one document maps to a _queue_ of rows, not a single row, so a repeated
 paragraph keeps one row per occurrence.
 
 ---
@@ -278,7 +279,7 @@ workload measured in single-digit jobs per minute. It bought nothing and cost co
 
 `updateDocumentSchema` originally reused the create schema's `tags` field, which carries
 `.default([])`. Zod applies the default during parsing, so `PATCH {}` became `{ tags: [] }` — which
-satisfied the "at least one field" guard *and then wrote an empty array*, silently clearing the
+satisfied the "at least one field" guard _and then wrote an empty array_, silently clearing the
 document's tags.
 
 Update schemas now use the undefaulted array, and the guard checks for a defined value rather than key
@@ -364,7 +365,7 @@ scanned, OCR is not supported", "it may be encrypted" — rather than creating a
 lands in `failed` seconds later. Extraction is fast and bounded by a 10MB limit.
 
 Everything after extraction is the ordinary path: the document is created and ingested by the same
-queue and worker as a typed one. Upload adds a *source of text*, not a parallel pipeline. `unpdf` is
+queue and worker as a typed one. Upload adds a _source of text_, not a parallel pipeline. `unpdf` is
 imported lazily, because it bundles a sizeable PDF.js build and a deployment that never receives a PDF
 should not pay for it at boot.
 
@@ -372,7 +373,7 @@ should not pay for it at boot.
 mid-sentence, and carrying a header on every page. Each breaks something specific: `deploy-\nment` is
 two useless tokens to a keyword index, hard wrapping defeats the sentence splitter, and a header
 repeated on every page drags every chunk toward the same embedding. Running furniture is detected by
-frequency — a *short* line repeated across many lines is furniture, a repeated paragraph is content.
+frequency — a _short_ line repeated across many lines is furniture, a repeated paragraph is content.
 
 ---
 
@@ -453,8 +454,8 @@ ERROR [ExceptionHandler] Error: Invalid environment configuration:
 ```
 
 `packages/ai` was never the problem. `validateChatConfig` and `buildBareChat` both fall through to
-an explicit `baseUrl` when no preset matches, and the error text already said *"For any other
-OpenAI-compatible service, set AI_CHAT_BASE_URL explicitly."* The layer was genuinely open. Then
+an explicit `baseUrl` when no preset matches, and the error text already said _"For any other
+OpenAI-compatible service, set AI_CHAT_BASE_URL explicitly."_ The layer was genuinely open. Then
 `apps/api/src/config/env.schema.ts` restated the provider list as a `z.enum` and closed it again —
 so the config supported five providers while the layer beneath it supported any. The requirement
 was "any provider following the OpenAI API specification", and what actually shipped was a
@@ -476,7 +477,7 @@ model names, so the evidence is on both sides of the wire.
 **The fix removes the duplication rather than extending the list.** `CHAT_PROVIDERS` is now derived
 from `CHAT_PRESETS`, so adding a preset makes it configurable with no second edit — which is what
 the presets docstring already promised. Openness does not cost the typo check: a name with no
-preset *and* no base URL is still rejected at boot, now with a message naming the fix. API keys are
+preset _and_ no base URL is still rejected at boot, now with a message naming the fix. API keys are
 demanded only when the preset says the service requires one, so a self-hosted endpoint needs no
 fake key to satisfy a validator.
 
@@ -487,3 +488,294 @@ provider list, and the next preset added to the AI layer would still have been u
 Related: [D8](#d8-capability-modelling-is-the-abstraction-not-the-base-url),
 [D11](#d11-the-contract-suite-is-what-makes-swappable-a-testable-claim),
 [D23](#d23-two-false-claims-found-by-running-the-documentation).
+
+---
+
+## D25. A clean-machine review found two defects no test could see
+
+Two problems survived every green check in this repo, and both would have stopped a reviewer before
+they reached any of the work above.
+
+**The web app had no environment on a fresh clone.** `apps/web/.env.local` existed only on the
+development machine. It is gitignored, `scripts/setup.mjs` never created it, and Next.js resolves
+env per app directory — it does not read a monorepo root `.env`. So `pnpm install && <setup> &&
+pnpm dev` produced a browser client constructed with `undefined` Supabase credentials, and sign-in
+failed on the first click with nothing in any log to explain it. Every local run already had the
+file, so nothing ever exercised the documented path.
+
+**The documented setup command never ran the setup script.** The README said `pnpm setup`. `setup`
+is a _reserved pnpm built-in_ that configures `PNPM_HOME` in the user's shell profile, so it
+shadowed the package script entirely: it appended to `~/.zshrc` and left the corepack pnpm shim
+broken, while Supabase never started. The irony is recorded in `scripts/setup.mjs` itself, which
+already carried a comment explaining that shelling out to pnpm triggers exactly this side effect —
+the defence was written into the script and the reviewer was routed around it.
+
+**Neither is a coding mistake; both are the same mistake.** Every verification ran on a machine that
+already had the artefacts of a successful setup. The fixes are small — the bootstrap script writes
+both env files, and the script is renamed `bootstrap` so nothing shadows it — but the durable change
+is that **CI now runs `pnpm bootstrap` and the browser suite**, so the documented path is exercised
+by something that has never seen this machine.
+
+**What this says about the test suite.** 257 tests, RLS verified by mutation, a provider contract
+suite, a retrieval eval gate — and none of them could see either defect, because all of them start
+after setup succeeds. Coverage of the code is not coverage of the first five minutes.
+
+Related: [D0](#d0-environment-verification-gate-m0),
+[D23](#d23-two-false-claims-found-by-running-the-documentation),
+[D26](#d26-the-e2e-suite-was-green-by-not-running).
+
+---
+
+## D26. The E2E suite was green by not running
+
+The browser test had rotted into three separate failures, and CI never noticed because **CI never
+ran it**.
+
+1. **It pointed at a host where the app does not work.** `baseURL` was `http://127.0.0.1:3000`.
+   Next's dev client bootstraps over a WebSocket whose handshake fails on the numeric host, so the
+   page served HTML that never hydrated. Every click was silently a no-op; the suite timed out
+   against an app that looked perfect in a screenshot. `localhost` hydrates; `127.0.0.1` does not.
+2. **It waited for a condition that was already true.** Creating a document through the UI makes an
+   _empty_ document, which ingests to `ready` with 0 chunks. The test then waited for `Ready` and
+   `/chunk(s)? indexed/` — both of which the pre-save state already satisfied, since the page
+   renders "0 chunks indexed". It raced ahead and asked its question against an unindexed document,
+   failing about one run in five. It now asserts `1 chunk indexed`, which the earlier state cannot
+   satisfy.
+3. **It started one server and used two.** Playwright waited only on port 3000. Next serves in
+   under a second while `nest start` compiles for ten or more, so the first test ran against a web
+   app whose API was still booting, and the documents page rendered a fetch error instead of its
+   empty state. The config now declares both servers, each with its own readiness URL — the API's
+   is `/health`, which is what that endpoint is for.
+
+A fourth flake was real product behaviour, not a test bug: usage is written fire-and-forget so that
+measuring work never delays it, and the usage page fetches once on mount. Waiting on the DOM would
+wait forever. The test re-fetches until the row appears, which is the honest encoding of an
+eventually-consistent read.
+
+**The lesson is the one in the title.** A test that is not run is not a test, and its rot is
+invisible and cumulative — three independent defects had piled up in a file that had "passed" since
+the day it was written. The suite now runs in CI on every push.
+
+Related: [D19](#d19-three-silent-failures-found-by-testing-end-to-end),
+[D25](#d25-a-clean-machine-review-found-two-defects-no-test-could-see).
+
+---
+
+## D27. Capability modelling, made load-bearing
+
+[D8](#d8-capability-modelling-is-the-abstraction-not-the-base-url) argued that the abstraction is
+what a provider _can do_, not its base URL. A review of the running system found the argument was
+only two-thirds implemented.
+
+**`maxContextTokens` was declared and ignored.** Every provider published a context window, and the
+prompt builder used `MAX_CONTEXT_TOKENS` from the environment instead. Swapping OpenAI (400k
+declared) for Ollama's llama3.2 (8,192 declared) left the number where it was, and the first
+request after the swap would overflow — the exact class of failure the capability model exists to
+prevent, in the one place it mattered most. The ceiling is now `min(env, provider)`: the operator
+can spend less than the model allows, never more.
+
+**The token budget was not a budget.** Sources were fitted to the ceiling and conversation history
+was appended _afterwards_, so a request exceeded the window by however much history it carried.
+History is now reserved before sources are fitted, because history cannot be dropped without
+changing the question.
+
+**The flagship example was a string comparison.** Rejecting Groq for embeddings — the case used
+throughout this document to explain why capabilities are modelled at all — was implemented as
+`provider === 'groq'`. It is now `embeddings: false` on the preset, so the next chat-only provider
+is a row rather than another branch.
+
+**And one capability was checked against the wrong authority.** `AI_EMBEDDING_DIMENSIONS` was
+validated against the provider's declared size but never against the database. Setting 768 for
+Ollama passed every check and then failed on the first insert with `expected 1536 dimensions, not
+768` — mid-ingestion, far from the cause, which is precisely the outcome the README promised the
+design prevented. The column is the authority, so the API now asks it at boot
+(`public.embedding_dimensions()`) and refuses to start on a mismatch, naming both fixes.
+
+`toolCalls` and `jsonMode` remain declared and unread. That is deliberate and now documented in the
+type: the fallback decorator intersects capabilities across two providers, and a capability absent
+from the type cannot be intersected.
+
+Related: [D8](#d8-capability-modelling-is-the-abstraction-not-the-base-url),
+[D2](#d2-one-adapter-plus-presets-not-five-provider-classes).
+
+---
+
+## D28. Billing-adjacent numbers need request scope, not a shared buffer
+
+Usage events were pushed into one array on the `AiService` singleton and drained per request. Under
+any concurrency that is wrong: two users answering at once interleave their pushes, and whichever
+request drains first takes the other's tokens. The failure path made it worse — it never drained,
+so a failed turn's events sat in the buffer and were charged to whoever asked next.
+
+Fixed with `AsyncLocalStorage`: each request opens its own bucket, which survives every await and
+every `yield` of the streaming generator. `enterWith` rather than `run(cb)`, because `run` would
+scope only the call that _creates_ the async generator and every resumption after the first yield
+would fall outside it.
+
+Events emitted outside any scope are now counted and dropped rather than parked. A dropped event is
+a missing number; a parked one is a wrong number charged to an innocent user, and wrong is worse
+than missing when the figure is billing-adjacent.
+
+**Verified under load, not by inspection**: two users asking concurrently, three rounds each, each
+finishing with exactly +6 calls attributed. Plus unit tests that interleave two scopes across awaits
+and across generator yields.
+
+Related: [D21](#d21-unknown-cost-is-null-not-zero),
+[D9](#d9-decorator-stack-over-inheritance).
+
+---
+
+## D29. `maxTokens` now means what it says
+
+`maxTokens` bounded a chunk's _body_; the overlap prefix was added on top. A "512-token chunk" was
+therefore up to 576 — the configured number meant something other than what it said, and every
+source understated how much of the prompt budget it consumed.
+
+Making it a true ceiling shrank bodies to 448 tokens and took the fixture corpus from 25 chunks to 40. **The eval numbers moved, and one conclusion reversed**: at 25 chunks keyword search beat hybrid
+on hit@1 and [eval/RESULTS.md](eval/RESULTS.md) said so; at 40 chunks hybrid leads and ties semantic
+exactly.
+
+The right reading is not "hybrid won". It is that a chunking change unrelated to retrieval mode was
+enough to flip the ranking, which is direct evidence that **a 35-question corpus cannot separate
+these configurations** — and that the earlier conclusion was stated more confidently than the data
+supported. The previous finding is recorded in RESULTS.md rather than quietly replaced, because the
+overturning is more informative than either number.
+
+Related: [D12](#d12-chunking-recursive-and-structure-aware-51264-measured-not-assumed),
+[D22](#d22-the-eval-harness-was-rebuilt-after-the-first-one-measured-nothing).
+
+---
+
+## D30. Re-indexing is one statement, and atomic
+
+Re-ingestion renumbered surviving chunks with up to 2N PostgREST round trips: one pass to park every
+moved row at a negative index (dodging the `(document_id, chunk_index)` unique constraint) and a
+second to settle it. Editing the first section of a long document shifts every chunk after it, so a
+60-chunk document cost 120 sequential HTTP calls.
+
+Slow was the lesser problem. Each call committed independently, so a crash partway through left rows
+stranded at negative indexes that no read path expects. Both passes now live in
+`public.reindex_chunks(...)` — one round trip, one transaction, and the denormalised tags refresh in
+the same statement so a tag edit cannot be half-applied.
+
+`SECURITY INVOKER`, not definer: the only caller is the ingestion worker on the service role, which
+already bypasses RLS. A definer function would hand the same power to anyone who could reach it.
+
+Verified on an 18-chunk document with a section prepended: 20 contiguous chunks, none stranded
+negative, tags refreshed, and 12 of 18 chunks reused rather than re-embedded.
+
+Related: [D13](#d13-incremental-re-ingestion-by-content-hash),
+[D15](#d15-no-queue-level-debounce-idempotent-jobs-instead).
+
+---
+
+## D31. A tags-only edit has to reach the chunks
+
+`chunks.tags` is denormalised from the document so the search functions can filter without a join
+([initial schema](supabase/migrations/20260923000100_initial_schema.sql)). Re-ingestion was
+triggered only by a content change, on the reasoning that tags do not affect chunking.
+
+They do not — but they affect _retrieval_. A tags-only edit left the chunks carrying the old tags,
+and `hybrid_search(filter_tags)` matches on `c.tags`, so the document became invisible to a search
+filtered by its own new tag. Silent, and only reachable through a feature (tag filtering) that the
+happy path does not exercise.
+
+Two changes, because one was not enough: the controller now enqueues on a tag change as well, and
+`ingest()` syncs tags on its content-hash skip path — otherwise the job ran and returned early
+without touching a row. The re-ingestion stays cheap exactly as
+[D15](#d15-no-queue-level-debounce-idempotent-jobs-instead) argued: the hash matches, so no chunking
+or embedding happens.
+
+Related: [D13](#d13-incremental-re-ingestion-by-content-hash),
+[D15](#d15-no-queue-level-debounce-idempotent-jobs-instead).
+
+## D32. The presets were claims about vendors, and two of them were wrong
+
+The contract suite ran every preset against a stubbed transport, which is the right way to keep CI
+hermetic and is genuinely useful: it pins response parsing, batch chunking, `index` ordering and
+finish-reason mapping. What it cannot do is check a claim about somebody else's server, because the
+stub returns whatever the preset implies. The preset table and the suite agreed with each other and
+neither had spoken to a vendor.
+
+So the same assertions now run twice. `packages/ai/src/testing/contract.ts` holds them once; the
+offline suite supplies a stub, and `pnpm test:live` supplies the real endpoints. A contract that
+lives only in the offline suite is a test of our own mock; one that lives only in the live suite
+cannot run in CI. Sharing it means a provider passing stubbed but failing live is a difference worth
+naming rather than a difference in test code.
+
+**Two preset default models were simply dead.** Groq's `llama-3.3-70b-versatile` returns 404 —
+Groq has retired its Llama line and now lists only reasoning models. Mistral's
+`mistral-large-latest` is absent from `GET /v1/models` entirely. This is the field most likely to
+rot, because vendors retire models far faster than they move endpoints, and a dead default is worse
+than no default: the provider validates at boot, starts cleanly, and fails on the first question.
+It is also the one class of drift the keyless probe **cannot** catch — a 404 for a retired model and
+a 401 for a rejected key are indistinguishable without a credential — which is the argument for the
+credentialed suite existing alongside the free one.
+
+**And Groq's replacement models changed what "enough tokens" means.** Every Groq chat model is now a
+reasoning model, and reasoning tokens are drawn from the completion budget before any visible
+content. At `max_tokens: 64` the call returns `content: ""` with `finish_reason: "length"`: a blank
+answer, no error, nothing in the logs. The contract's own probe used 64, on the reasoning that a
+one-word answer cannot need more — so the test was measuring the budget, not the provider. The probe
+now budgets 512 and names the case explicitly when text is empty on a `length` finish, because the
+failure is otherwise indistinguishable from a model that simply had nothing to say. The same trap
+applies to the application's answer budget, not just the test.
+
+Two capability rows were wrong, and both failed on the first live run.
+
+**Ollama does report streamed usage.** The row said `streamingUsage: false`, with a comment that
+Ollama rejects unknown stream options. That was true of older builds. 0.34.4 accepts
+`stream_options` — it tolerates even a bogus field inside it — and emits a final chunk carrying
+`usage`. The cost of the stale row was invisible and ongoing: streamed answers through Ollama were
+recorded as **zero tokens**, so the usage page reported local traffic as free. Nothing errored. The
+live capability test now asserts the declared value **both ways**, because both directions are
+expensive — understate it and token accounting silently goes to nil, overstate it and older
+providers 400 mid-answer.
+
+**Gemini reports streamed usage too**, and its row said `false` for the same reason Ollama's did:
+the capability is undocumented, so the preset assumed absence. Two independent rows made the
+undocumented-therefore-assume-no call and both were wrong. That is the argument for asserting
+capabilities against a running endpoint rather than reasoning carefully about a vendor's
+documentation — careful reasoning produced the wrong answer twice.
+
+**Gemini rejects a bad key with HTTP 400.** Its body reads `"Please pass a valid API key"`, and
+`toAiError` keyed on status, so the single most likely misconfiguration an operator can make was
+classified `bad_request` and reported as a malformed request. The fix matches the message, not the
+provider id — for the same reason the preset table is data rather than a class hierarchy, the next
+vendor to do this should not need a branch. The pattern is narrow enough that ordinary 400s stay
+`bad_request`, which is asserted in both directions in `error-mapping.spec.ts`, where the real
+captured bodies are pinned so CI checks them with no network.
+
+A third finding changed no code but did change a test. **Groq authenticates before it routes**:
+`/openai/v1/embeddings` returns 401 with a bad key, while a genuinely unknown path returns 404 with
+the same bad key. The first version of that test read the 404 it expected as proof that Groq has no
+embeddings endpoint — a green tick standing on a false premise. It is now gated on a real key, and
+says so when it skips.
+
+The suite itself had the same class of bug it was written to find. Ollama needs no key, so it
+counted as configured whether or not it was running: a machine with no keys and no Ollama reported
+a green `1 passed` while every real assertion skipped. A run that reaches nothing now fails. And
+because `describe.skipIf` is evaluated at collection time, the reachability probe had to move from
+`beforeAll` to a top-level `await` — a flag set in a hook is still `false` when the skip decision is
+made, so every Ollama suite silently skipped even with the server up while the summary reported it
+as covered.
+
+**A rate limit is not a contract violation, and the suite said it was.** Free tiers are the
+realistic case here — Gemini allows 20 requests a day on the model in its preset, Mistral throttles
+within a couple of calls — and the first version failed on a 429 as though the provider had broken
+the contract. That produces a suite which is red for reasons outside the repository, which is how
+people learn to ignore a suite. Worse, one assertion actively misread it: the capability probe
+treated any non-2xx as "the provider refused `stream_options`", so an exhausted quota argued that
+Gemini's row should be reverted to the value live testing had just disproved. Rate limits are now
+reported as **skipped, not exercised**, carrying the provider's own message — never as a pass, and
+never as a failure.
+
+The last piece is what runs without an account. A keyless probe sends a deliberately invalid key to
+every hosted provider, which costs nothing and proves the two things most likely to rot in a preset
+row: that the base URL is still right, and that the vendor's way of saying "no" still maps to
+`auth`. That is the only coverage OpenAI, Groq, Together and OpenRouter get on a machine with no
+credentials, and it is what caught Gemini.
+
+Related: [D27](#d27-capability-modelling-made-load-bearing),
+[D24](#d24-the-swappability-claim-was-false-and-only-a-live-swap-found-it),
+[D2](#d2-one-adapter-plus-presets-not-five-provider-classes).

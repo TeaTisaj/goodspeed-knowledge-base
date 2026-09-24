@@ -4,12 +4,20 @@ import type { DocumentSummary } from '@kb/contracts';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '@/lib/api';
-import { Button, EmptyState, ErrorBanner, SkeletonRow, StatusBadge } from '@/components/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorBanner,
+  SkeletonRow,
+  StatusBadge,
+  SuccessBanner,
+} from '@/components/ui';
 import { UploadButton } from '@/components/upload-button';
 
 export default function DocumentsPage() {
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [tag, setTag] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -69,10 +77,23 @@ export default function DocumentsPage() {
         <h1 className="text-base font-semibold">Documents</h1>
         <div className="ml-auto flex gap-2">
           <UploadButton
-            onUploaded={(id) => {
-              window.location.href = `/documents/${id}`;
+            /**
+             * Stays on the list rather than opening the editor. An uploaded file
+             * is not something you came here to edit -- you came to add it to the
+             * knowledge base -- so the useful confirmation is seeing the row
+             * appear and watch itself turn Ready.
+             */
+            onUploaded={(doc) => {
+              setError(null);
+              setNotice(
+                `Uploaded "${doc.title}". Indexing now -- it can be asked about once Ready.`,
+              );
+              void load();
             }}
-            onError={setError}
+            onError={(message) => {
+              setNotice(null);
+              setError(message);
+            }}
           />
           <Button onClick={createDraft} disabled={creating}>
             {creating ? 'Creating...' : 'New document'}
@@ -103,6 +124,8 @@ export default function DocumentsPage() {
           ))}
         </div>
       )}
+
+      {notice && <SuccessBanner message={notice} onDismiss={() => setNotice(null)} />}
 
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
 

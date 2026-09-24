@@ -6,6 +6,7 @@ import type {
   Conversation,
   CreateDocumentInput,
   Document,
+  Health,
   ListDocumentsResponse,
   ProblemDetails,
   StreamEvent,
@@ -123,6 +124,18 @@ export const api = {
 
   listConversations: () => request<Conversation[]>('/chat/conversations'),
   listMessages: (id: string) => request<ChatMessage[]>(`/chat/conversations/${id}/messages`),
+
+  /**
+   * Not routed through `request`, which attaches a bearer token and throws
+   * when there is no session. Health is deliberately unauthenticated so the
+   * shell can report a degraded configuration on the login screen too --
+   * which is the one place it is most likely to be read.
+   */
+  health: async (): Promise<Health> => {
+    const res = await fetch(`${API_URL}/health`);
+    if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
+    return (await res.json()) as Health;
+  },
 };
 
 /**

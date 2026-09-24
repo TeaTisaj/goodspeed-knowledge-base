@@ -47,10 +47,16 @@ export function validateEmbeddingConfig(config: EmbeddingProviderConfig): void {
 
   if (provider === 'fake') return;
 
-  if (provider === 'groq') {
+  // Driven by the preset table, not by a provider name. A chat-only provider
+  // declares `embeddings: false` and is rejected here by that declaration, so
+  // adding the next one is a row rather than another branch.
+  const chatPreset = CHAT_PRESETS[provider as keyof typeof CHAT_PRESETS];
+  if (chatPreset && !chatPreset.embeddings) {
     throw new AiConfigurationError(
-      'AI_EMBEDDING_PROVIDER="groq" is not valid: Groq exposes no embeddings endpoint. ' +
-        'Groq works for chat (AI_CHAT_PROVIDER=groq); pair it with OpenAI or Ollama for embeddings.',
+      `AI_EMBEDDING_PROVIDER="${provider}" is not valid: ${provider} exposes no embeddings ` +
+        `endpoint. It works for chat (AI_CHAT_PROVIDER=${provider}); pair it with a provider ` +
+        `that does embeddings, such as OpenAI or Ollama. Known embedding providers: ` +
+        `${Object.keys(EMBEDDING_PRESETS).join(', ')}.`,
     );
   }
 
@@ -190,7 +196,27 @@ export function buildEmbeddingProvider(
             dimensions: config.dimensions ?? 1536,
             maxBatchSize: 64,
             maxInputTokens: 8192,
-            configurableDimensions: false,
+            /**
+             * Trust an explicit dimension for a provider we have no preset for.
+             *
+             * This used to be hardcoded `false`, which quietly made the layer's
+             * central claim untrue: an unknown provider could *never* request a
+             * dimension, so every embedding model needing the `dimensions`
+             * parameter was reachable only by adding a preset -- that is, by
+             * changing application code, which is the one thing the design is
+             * supposed to make unnecessary. Gemini is a live example: its
+             * vectors are 3072 by default, over pgvector's 2000-dim ceiling,
+             * and usable only when truncation is requested.
+             *
+             * `dimensions` is part of the OpenAI embeddings spec, so asking a
+             * spec-following provider for one is fair. Setting the variable is
+             * taken as the operator asserting their provider honours it, and
+             * being wrong is safe rather than silent: a provider that rejects
+             * the field fails the call, and one that ignores it returns its
+             * native width, which the response length check catches with an
+             * error naming the model and both sizes.
+             */
+            configurableDimensions: config.dimensions !== undefined,
           },
           timeoutMs: config.timeoutMs,
           dimensions: config.dimensions,

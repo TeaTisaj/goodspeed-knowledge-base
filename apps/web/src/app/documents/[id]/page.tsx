@@ -153,7 +153,8 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
-        Content <span className="text-xs text-[var(--color-ink-muted)]">markdown or plain text</span>
+        Content{' '}
+        <span className="text-xs text-[var(--color-ink-muted)]">markdown or plain text</span>
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}

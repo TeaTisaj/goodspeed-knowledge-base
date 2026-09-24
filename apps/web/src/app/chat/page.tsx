@@ -5,12 +5,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api, streamAsk } from '@/lib/api';
 import { Button, EmptyState, ErrorBanner, Spinner } from '@/components/ui';
 import { CitationCard } from '@/components/citation-card';
+import { Markdown } from '@/components/markdown';
 
 interface Turn {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   citations: Citation[];
+  /** True while showing retrieval candidates rather than what was cited. */
+  sourcesOnly?: boolean;
   streaming?: boolean;
 }
 
@@ -109,10 +112,16 @@ export default function ChatPage() {
             case 'status':
               setStage(event.stage);
               break;
+            case 'sources':
+              // Candidates arrive before the answer, so something is on screen
+              // while the text streams.
+              patch((t) => ({ ...t, citations: event.sources, sourcesOnly: true }));
+              break;
             case 'citations':
-              // Sources arrive before the answer, so they can be shown while
-              // the text is still streaming.
-              patch((t) => ({ ...t, citations: event.citations }));
+              // Narrowed to what the model actually cited, once the answer is
+              // done. This is also what was persisted, so a reload shows the
+              // same set rather than silently fewer.
+              patch((t) => ({ ...t, citations: event.citations, sourcesOnly: false }));
               break;
             case 'token':
               patch((t) => ({ ...t, content: t.content + event.delta }));
@@ -183,18 +192,31 @@ export default function ChatPage() {
                 </span>
 
                 <div
-                  className={`whitespace-pre-wrap rounded-md px-3 py-2 text-sm leading-relaxed ${
-                    turn.role === 'user' ? 'bg-[var(--color-surface-muted)]' : 'border'
+                  className={`rounded-md px-3 py-2 text-sm leading-relaxed ${
+                    turn.role === 'user'
+                      ? 'whitespace-pre-wrap bg-[var(--color-surface-muted)]'
+                      : 'border'
                   }`}
                 >
-                  {turn.content || (turn.streaming ? '' : '(no answer)')}
+                  {/* The question is shown verbatim; only the answer is
+                      markdown, because only the answer is generated. */}
+                  {turn.role === 'user' ? (
+                    turn.content
+                  ) : turn.content ? (
+                    <Markdown text={turn.content} />
+                  ) : (
+                    !turn.streaming && '(no answer)'
+                  )}
                   {turn.streaming && (
                     <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-current align-text-bottom" />
                   )}
                 </div>
 
                 {turn.role === 'assistant' && turn.citations.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-[var(--color-ink-muted)]">
+                      {turn.sourcesOnly ? 'Searching:' : 'Cited:'}
+                    </span>
                     {turn.citations.map((c) => (
                       <button
                         key={`${turn.id}-${c.number}`}

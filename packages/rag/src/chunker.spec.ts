@@ -40,14 +40,23 @@ describe('chunkText', () => {
     expect(chunks[0]?.index).toBe(0);
   });
 
-  it('never exceeds maxTokens, allowing for the overlap prefix', () => {
+  it('never exceeds maxTokens, overlap included', () => {
     const doc = Array.from({ length: 12 }, (_, i) => para(i)).join('\n\n');
     const chunks = chunkText(doc, { maxTokens: 200, overlapTokens: 20 });
 
     expect(chunks.length).toBeGreaterThan(1);
     for (const c of chunks) {
-      // Body is capped at maxTokens; overlap is prepended on top of it.
-      expect(c.tokenCount).toBeLessThanOrEqual(200 + 20 + 10);
+      // The ceiling covers the emitted chunk, not just its body: overlap used
+      // to be prepended on top of a full-size body, so a "200-token" chunk
+      // could reach 220 and the configured number meant less than it said.
+      expect(c.tokenCount).toBeLessThanOrEqual(200);
+    }
+  });
+
+  it('holds the ceiling at the default settings too', () => {
+    const doc = Array.from({ length: 40 }, (_, i) => para(i)).join('\n\n');
+    for (const c of chunkText(doc)) {
+      expect(c.tokenCount).toBeLessThanOrEqual(DEFAULT_CHUNK_OPTIONS.maxTokens);
     }
   });
 

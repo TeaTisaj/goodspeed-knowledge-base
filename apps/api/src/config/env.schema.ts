@@ -66,6 +66,17 @@ export const envSchema = z
     AI_CHAT_BASE_URL: z.url().optional(),
     AI_CHAT_API_KEY: z.string().optional(),
 
+    /**
+     * Optional secondary chat provider, used only when the primary fails
+     * unrecoverably after exhausting its retries. Left unset, there is no
+     * fallback and the request fails -- which is the right default: a silent
+     * switch to a different model changes answer quality without saying so.
+     */
+    AI_CHAT_FALLBACK_PROVIDER: nonEmpty.optional(),
+    AI_CHAT_FALLBACK_MODEL: nonEmpty.optional(),
+    AI_CHAT_FALLBACK_BASE_URL: z.url().optional(),
+    AI_CHAT_FALLBACK_API_KEY: z.string().optional(),
+
     AI_EMBEDDING_PROVIDER: nonEmpty.default('fake'),
     AI_EMBEDDING_MODEL: nonEmpty.default('text-embedding-3-small'),
     AI_EMBEDDING_BASE_URL: z.url().optional(),
@@ -125,7 +136,8 @@ export const envSchema = z
         message: `AI_CHAT_API_KEY is required for provider "${e.AI_CHAT_PROVIDER}".`,
       });
     }
-    const embedPreset = EMBEDDING_PRESETS[e.AI_EMBEDDING_PROVIDER as keyof typeof EMBEDDING_PRESETS];
+    const embedPreset =
+      EMBEDDING_PRESETS[e.AI_EMBEDDING_PROVIDER as keyof typeof EMBEDDING_PRESETS];
     if (embedPreset?.requiresApiKey && !e.AI_EMBEDDING_API_KEY) {
       ctx.addIssue({
         code: 'custom',

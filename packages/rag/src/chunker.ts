@@ -11,6 +11,9 @@ import { encode } from 'gpt-tokenizer';
  * is why the eval harness exists: these numbers are configurable and measured
  * against our own corpus rather than taken on faith.
  *
+ * `maxTokens` bounds the whole emitted chunk, overlap included, so the number
+ * in the config is the number that reaches the prompt.
+ *
  * Splitting is recursive on a separator hierarchy, strongest boundary first:
  * headings, then paragraphs, then sentences, then words, then characters. The
  * point is that a chunk boundary should fall where a human would see a break,
@@ -18,7 +21,7 @@ import { encode } from 'gpt-tokenizer';
  */
 
 export interface ChunkOptions {
-  /** Target size in tokens. */
+  /** Ceiling on the emitted chunk, in tokens, including the overlap prefix. */
   maxTokens?: number;
   /** Overlap in tokens, carried from the end of the previous chunk. */
   overlapTokens?: number;
@@ -139,7 +142,15 @@ export function chunkText(raw: string, options: ChunkOptions = {}): Chunk[] {
   const text = cleanText(raw);
   if (text.length === 0) return [];
 
-  const pieces = breakDown(text, opts.maxTokens);
+  // `maxTokens` is a ceiling on the emitted chunk, overlap included. Packing
+  // bodies to the full ceiling and then prepending the overlap produced chunks
+  // up to `maxTokens + overlapTokens`, so a "512-token chunk" was really up to
+  // 576 -- which made the configured number mean something other than what it
+  // says, and quietly understated how much of the prompt budget each source
+  // consumed. The room for the overlap is reserved up front instead.
+  const bodyTokens = Math.max(1, opts.maxTokens - opts.overlapTokens);
+
+  const pieces = breakDown(text, bodyTokens);
 
   // Pack pieces into chunks up to maxTokens, so a chunk is not left tiny just
   // because the source had short paragraphs.
@@ -148,7 +159,7 @@ export function chunkText(raw: string, options: ChunkOptions = {}): Chunk[] {
 
   for (const piece of pieces) {
     const candidate = current ? `${current}\n\n${piece}` : piece;
-    if (countTokens(candidate) <= opts.maxTokens) {
+    if (countTokens(candidate) <= bodyTokens) {
       current = candidate;
     } else {
       if (current) packed.push(current);

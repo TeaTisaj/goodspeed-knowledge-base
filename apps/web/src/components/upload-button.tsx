@@ -1,5 +1,6 @@
 'use client';
 
+import type { Document } from '@kb/contracts';
 import { useRef, useState } from 'react';
 import { ApiError, api } from '@/lib/api';
 import { Button } from './ui';
@@ -17,7 +18,7 @@ export function UploadButton({
   onUploaded,
   onError,
 }: {
-  onUploaded: (id: string) => void;
+  onUploaded: (doc: Document) => void;
   onError: (message: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -27,7 +28,7 @@ export function UploadButton({
     setBusy(true);
     try {
       const doc = await api.uploadDocument(file);
-      onUploaded(doc.id);
+      onUploaded(doc);
     } catch (e) {
       onError(e instanceof ApiError ? e.problem.title : 'Could not upload that file');
     } finally {

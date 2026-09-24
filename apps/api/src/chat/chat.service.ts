@@ -14,6 +14,9 @@ import { RetrievalService } from '../retrieval/retrieval.service.js';
 import { UsageService } from '../usage/usage.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
 
+/** Most recent messages carried into the prompt and the condenser. */
+const HISTORY_TURNS = 10;
+
 export interface AskParams {
   accessToken: string;
   userId: string;
@@ -55,6 +58,10 @@ export class ChatService {
   async *ask(params: AskParams): AsyncGenerator<StreamEvent> {
     const db = this.supabase.forUser(params.accessToken);
     const startedAt = Date.now();
+    // Opened before any provider call, so every embedding, condense and chat
+    // token emitted during this turn lands in this request's own bucket rather
+    // than a buffer shared with whoever else is mid-answer.
+    const usageEvents = this.ai.beginUsageScope();
 
     try {
       const conversationId = await this.ensureConversation(
@@ -98,14 +105,29 @@ export class ChatService {
       }
 
       // --- 3. build the prompt ----------------------------------------------
+      // The ceiling comes from the provider that will actually serve the
+      // request, not from a constant: swapping a 400k-window model for an 8k
+      // one must move this number, or the first swap overflows the window.
+      // MAX_CONTEXT_TOKENS is the override, and the lower of the two wins.
+      const providerWindow = this.ai.chat.capabilities.maxContextTokens;
+      const maxContextTokens = Math.min(this.config.env.MAX_CONTEXT_TOKENS, providerWindow);
+
+      // History and the question are already committed, so they come out of the
+      // budget before the sources are fitted to what is left.
+      const reservedTokens =
+        history.reduce((n, h) => n + countTokens(h.content), 0) + countTokens(params.question);
+
       const { system, used } = buildPrompt(chunks, {
-        maxContextTokens: this.config.env.MAX_CONTEXT_TOKENS,
+        maxContextTokens,
+        reservedTokens,
         countTokens,
       });
 
-      // Citations are emitted before the answer so the UI can render sources
-      // immediately rather than waiting for the stream to finish.
-      yield { type: 'citations', citations: this.toCitations(used) };
+      // Sources are emitted before the answer so the UI can render them while
+      // the text is still streaming. These are the candidates the model was
+      // given, which is not the same set as the ones it ended up citing -- the
+      // narrowed set is sent again as `citations` once the answer is complete.
+      yield { type: 'sources', sources: this.toCitations(used) };
 
       // --- 4. stream the answer ---------------------------------------------
       yield { type: 'status', stage: 'generating' };
@@ -145,6 +167,21 @@ export class ChatService {
       // uncited answer records no citations rather than implying support.
       const resolved = resolveCitations(answer, used);
 
+      // Replaces the candidate list in the UI with what was actually cited.
+      // Without this the live view showed every retrieved chunk while the
+      // stored message kept only the cited ones, so reloading a conversation
+      // silently changed its citations.
+      yield {
+        type: 'citations',
+        citations: resolved.map((c) => ({
+          number: c.number,
+          chunkId: c.chunkId,
+          documentId: c.documentId,
+          documentTitle: c.documentTitle,
+          quote: c.quote,
+        })),
+      };
+
       await this.saveMessage(params.accessToken, {
         id: assistantMessageId,
         conversationId,
@@ -164,11 +201,10 @@ export class ChatService {
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      // Drain the buffered usage events the AI decorators emitted during this
-      // turn -- chat, the condense call, and every embedding -- and attribute
-      // them to this user. Never awaited before `done`: the answer is already
-      // complete, and analytics must not delay it.
-      void this.usage.record(params.userId, this.ai.drainUsage());
+      // Everything this turn consumed -- chat, the condense call, every
+      // embedding -- attributed to the user who caused it. Never awaited before
+      // `done`: the answer is already complete, and analytics must not delay it.
+      void this.usage.record(params.userId, usageEvents.splice(0));
 
       yield { type: 'done', messageId: assistantMessageId };
     } catch (error) {
@@ -176,6 +212,10 @@ export class ChatService {
       // a failure is an event in the stream. The alternative -- throwing --
       // leaves the client hanging on a half-written response.
       this.logger.error(`Chat failed: ${(error as Error).message}`);
+      // A turn that failed halfway still spent tokens. Recording them here is
+      // what stops the failure path leaking usage that would otherwise be
+      // attributed to whoever asked next.
+      void this.usage.record(params.userId, usageEvents.splice(0));
       yield {
         type: 'error',
         code: 'internal_error',
@@ -245,15 +285,20 @@ export class ChatService {
     accessToken: string,
     conversationId: string,
   ): Promise<{ role: 'user' | 'assistant'; content: string }[]> {
+    // Newest first, then reversed back into chronological order. Ordering
+    // ascending with a limit takes the *oldest* ten messages, which freezes the
+    // context at the start of the conversation: past turn ten the model and the
+    // condenser never see anything recent.
     const { data } = await this.supabase
       .forUser(accessToken)
       .from('messages')
-      .select('role, content')
+      .select('role, content, created_at')
       .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-      .limit(10);
+      .order('created_at', { ascending: false })
+      .limit(HISTORY_TURNS);
 
-    return (data ?? []) as { role: 'user' | 'assistant'; content: string }[];
+    const rows = (data ?? []) as { role: 'user' | 'assistant'; content: string }[];
+    return rows.reverse();
   }
 
   private async saveMessage(

@@ -50,6 +50,22 @@ function toAiError(err: unknown, providerId: string): AiProviderError {
     else if (status === 408) code = 'timeout';
     else if (status === 400 && /context length|maximum context|too long/i.test(err.message))
       code = 'context_length';
+    // Not every provider says "no" with a 401. Gemini's OpenAI surface answers
+    // an invalid key with HTTP 400 and `"Please pass a valid API key"`, which
+    // the status check alone files as `bad_request` -- so an operator with a
+    // typo'd key is told their request was malformed, and the one diagnostic
+    // that would have named the real problem never appears. Found by the live
+    // reachability suite, which sends a deliberately bad key to every provider.
+    //
+    // Matched on the message rather than on the provider id, for the same
+    // reason the preset table is data: the next provider to do this should not
+    // need a new branch. The pattern is kept narrow enough that a genuine
+    // bad-request mentioning a key in passing will not trip it.
+    else if (
+      status === 400 &&
+      /\b(api[ _-]?key|credential|unauthenticated|unauthorized)\b/i.test(err.message)
+    )
+      code = 'auth';
     else if (status === 400 || status === 404 || status === 422) code = 'bad_request';
     else if (status && status >= 500) code = 'server_error';
 
@@ -173,8 +189,11 @@ export class OpenAICompatibleChatProvider implements ChatProvider {
           temperature: request.temperature,
           max_tokens: request.maxTokens,
           stream: true,
-          // Only request usage where the provider actually reports it;
-          // Ollama rejects unknown stream options.
+          // Only request usage where the provider actually reports it. Not
+          // every provider tolerates the field, and the ones that ignore it
+          // silently are indistinguishable from the ones that honour it -- so
+          // the answer is asserted per provider by the live capability test
+          // rather than guessed here.
           ...(this.capabilities.streamingUsage ? { stream_options: { include_usage: true } } : {}),
         },
         { signal: request.signal },

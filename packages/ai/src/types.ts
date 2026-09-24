@@ -40,11 +40,26 @@ export interface ProviderInfo {
 // --- capabilities ---------------------------------------------------------
 
 export interface ChatCapabilities {
+  /** Gates `streamChat`, which refuses rather than silently buffering. */
   streaming: boolean;
+  /**
+   * Declared but not yet branched on: this workflow makes no tool calls and
+   * requests no JSON, so nothing reads these two today. They are here because
+   * the fallback decorator has to intersect capabilities across two providers,
+   * and a capability absent from the type cannot be intersected -- the moment
+   * a tool-using path is added, the answer for every provider is already
+   * recorded rather than rediscovered. Called out so a reader does not mistake
+   * unused for unconsidered.
+   */
   toolCalls: boolean;
   jsonMode: boolean;
   /** Reports token usage on streamed responses. Several providers do not. */
   streamingUsage: boolean;
+  /**
+   * Upper bound on the request. Read by the chat workflow, which fits the
+   * prompt to `min(this, MAX_CONTEXT_TOKENS)` -- so swapping a 400k model for
+   * an 8k one moves the budget without touching configuration.
+   */
   maxContextTokens: number;
 }
 

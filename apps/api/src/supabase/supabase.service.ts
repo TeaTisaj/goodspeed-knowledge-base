@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { ConfigService } from '../config/config.service.js';
 
+/** Roughly one per concurrently-active user; well under any real memory cost. */
+const MAX_CACHED_USER_CLIENTS = 500;
+
 /**
  * Two database access paths, deliberately separated.
  *
@@ -18,6 +21,7 @@ import { ConfigService } from '../config/config.service.js';
 @Injectable()
 export class SupabaseService {
   private readonly adminClient: SupabaseClient;
+  private readonly userClients = new Map<string, SupabaseClient>();
 
   constructor(private readonly config: ConfigService) {
     this.adminClient = createClient(
@@ -27,12 +31,42 @@ export class SupabaseService {
     );
   }
 
-  /** RLS-enforced client for the current request. */
+  /**
+   * RLS-enforced client for the current request.
+   *
+   * Cached per access token. `createClient` is not free -- it builds postgrest,
+   * auth, realtime and storage sub-clients -- and a single chat turn calls this
+   * six times while answering one question. The cache is keyed by the token, so
+   * two users can never share a client, and entries expire with the token.
+   *
+   * A bounded LRU rather than a plain map: tokens rotate, and an unbounded
+   * cache keyed by them is a slow memory leak.
+   */
   forUser(accessToken: string): SupabaseClient {
-    return createClient(this.config.env.SUPABASE_URL, this.config.env.SUPABASE_PUBLISHABLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
-    });
+    const cached = this.userClients.get(accessToken);
+    if (cached) {
+      // Refresh recency: re-inserting moves the key to the end of the Map's
+      // insertion order, which is what makes the eviction below LRU.
+      this.userClients.delete(accessToken);
+      this.userClients.set(accessToken, cached);
+      return cached;
+    }
+
+    const client = createClient(
+      this.config.env.SUPABASE_URL,
+      this.config.env.SUPABASE_PUBLISHABLE_KEY,
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      },
+    );
+
+    this.userClients.set(accessToken, client);
+    if (this.userClients.size > MAX_CACHED_USER_CLIENTS) {
+      const oldest = this.userClients.keys().next().value;
+      if (oldest !== undefined) this.userClients.delete(oldest);
+    }
+    return client;
   }
 
   /** Bypasses RLS. Worker use only. */

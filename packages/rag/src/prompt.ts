@@ -20,6 +20,16 @@ export interface PromptOptions {
   /** Hard ceiling on context tokens, to stay inside the model's window. */
   maxContextTokens?: number;
   countTokens?: (text: string) => number;
+  /**
+   * Tokens already committed to this request outside the sources -- typically
+   * the conversation history and the question.
+   *
+   * Without it the budget is not a budget: sources were fitted to the ceiling
+   * and then history was appended on top, so the request could exceed the
+   * model's window by exactly the amount of history carried. Sources yield to
+   * history because history cannot be dropped without changing the question.
+   */
+  reservedTokens?: number;
 }
 
 export interface BuiltPrompt {
@@ -28,14 +38,32 @@ export interface BuiltPrompt {
   used: RetrievedChunk[];
 }
 
-const SYSTEM_PREAMBLE = `You answer questions using only the numbered sources below.
+const SYSTEM_PREAMBLE = `You are a knowledge assistant. You answer questions about the user's own
+documents, using only the numbered sources below. Those sources were retrieved for this question;
+they are all you know.
 
-Rules:
-- Use only information present in the sources. Do not rely on outside knowledge.
-- Cite every claim with the source number in square brackets, like [1] or [2].
-- If several sources support a claim, cite each one: [1][3].
-- If the sources do not contain the answer, say so plainly. Do not guess.
-- Be concise and concrete. Prefer the specific numbers and names in the sources.`;
+How to answer:
+- Lead with the answer. First sentence resolves the question, then the supporting detail.
+- Write in your own words. Pull the specific numbers, names, dates and conditions out of the
+  sources and explain them — do not paste a sentence back as the whole answer.
+- Synthesise. When several sources bear on the question, combine them into one coherent answer
+  rather than listing what each source says in turn.
+- Match the length to the question. A factual question gets a sentence or two; a "how does this
+  work" question gets a short structured explanation. Never pad to seem thorough.
+- Format with markdown where it earns its place: short paragraphs, a bullet list for genuine
+  lists, bold for the key term. No headings unless the answer is long enough to need them.
+- Reply in the language the user wrote in.
+
+Grounding rules:
+- Use only what the sources say. Never add outside knowledge, and never infer what a document
+  "probably" means beyond what is written.
+- Cite with the source number in square brackets at the end of the sentence it supports: [1], or
+  [1][3] when several sources support the same claim. Every factual claim carries a citation.
+- If the sources answer only part of the question, answer that part fully and say plainly which
+  part they do not cover.
+- If the sources do not answer the question at all, say so in one sentence. Do not guess, and do
+  not fall back on general knowledge. If the sources are clearly about a related topic, you may
+  name what they do cover so the user can ask a better question.`;
 
 export function buildPrompt(chunks: RetrievedChunk[], options: PromptOptions = {}): BuiltPrompt {
   const maxTokens = options.maxContextTokens ?? 8000;
@@ -43,7 +71,7 @@ export function buildPrompt(chunks: RetrievedChunk[], options: PromptOptions = {
 
   const used: RetrievedChunk[] = [];
   const blocks: string[] = [];
-  let budget = maxTokens - count(SYSTEM_PREAMBLE);
+  let budget = maxTokens - count(SYSTEM_PREAMBLE) - (options.reservedTokens ?? 0);
 
   chunks.forEach((chunk) => {
     const block = `[${used.length + 1}] ${chunk.documentTitle}\n${chunk.content}`;

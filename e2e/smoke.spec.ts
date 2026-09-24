@@ -30,7 +30,10 @@ test('sign up, create a document, ingest it, and get a cited answer', async ({ p
   await expect(page.getByText(/no documents yet/i)).toBeVisible();
 
   // --- create a document --------------------------------------------------
-  await page.getByRole('button', { name: /new document/i }).first().click();
+  await page
+    .getByRole('button', { name: /new document/i })
+    .first()
+    .click();
   await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}/, { timeout: 30_000 });
 
   await page.getByLabel('Title').fill('Deployment runbook');
@@ -39,8 +42,11 @@ test('sign up, create a document, ingest it, and get a cited answer', async ({ p
   await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   // --- ingestion completes without a reload -------------------------------
-  await expect(page.getByText('Ready')).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByText(/chunk(s)? indexed/)).toBeVisible();
+  // Asserted on the chunk count, not on "Ready" or /chunks? indexed/. Creating
+  // a document produces an empty one, which ingests to `ready` with 0 chunks --
+  // so both of those already match *before* the save, and the test would race
+  // ahead and ask its question against an unindexed document.
+  await expect(page.getByText(/\b1 chunk indexed\b/)).toBeVisible({ timeout: 45_000 });
 
   // --- ask a question -----------------------------------------------------
   await page.getByRole('link', { name: 'Chat' }).click();
@@ -104,20 +110,37 @@ test('uploading a text file creates a document and records usage', async ({ page
     ),
   });
 
-  await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}/, { timeout: 30_000 });
-  // The title comes from the markdown heading, not the filename.
-  await expect(page.getByLabel('Title')).toHaveValue('Security policy');
-  await expect(page.getByText('Ready')).toBeVisible({ timeout: 45_000 });
+  // An upload stays on the list rather than opening the editor, and confirms
+  // itself with a banner. The title comes from the markdown heading, not the
+  // filename.
+  await expect(page).toHaveURL(/\/documents$/);
+  await expect(page.getByText(/Uploaded "Security policy"/)).toBeVisible({ timeout: 30_000 });
+
+  // Chunk count, not the status badge: an upload is created and ingested in one
+  // step, so "Ready" can be on screen before the chunks exist and the usage
+  // assertions below would then race an embedding that has not happened yet.
+  const uploadedRow = page.getByRole('listitem').filter({ hasText: 'Security policy' });
+  await expect(uploadedRow.getByText(/\b\d+ chunks?\b/)).toBeVisible({ timeout: 45_000 });
 
   // Usage should now show the embedding calls that ingestion made.
   await page.getByRole('link', { name: 'Usage' }).click();
   await expect(page).toHaveURL(/\/usage/);
-  // Specific locators: "Tokens" appears as both a stat label and a column header.
-  await expect(page.getByRole('columnheader', { name: 'Tokens' })).toBeVisible({ timeout: 30_000 });
-  // Ingestion embeds the uploaded document, so an embed row must exist.
-  await expect(page.getByRole('cell', { name: 'embed' }).first()).toBeVisible({ timeout: 30_000 });
-  // And the token count must be non-zero, not just present.
-  await expect(page.getByRole('table')).toContainText(/\d/);
+
+  // Usage is written out of band: ingestion reports success before the
+  // analytics insert lands, deliberately, so that measuring the work never
+  // delays it. The page fetches once on mount, so waiting on the DOM alone
+  // would wait forever -- it has to be re-fetched until the row appears.
+  await expect(async () => {
+    await page.reload();
+    // Specific locators: "Tokens" appears as both a stat label and a column header.
+    await expect(page.getByRole('columnheader', { name: 'Tokens' })).toBeVisible({
+      timeout: 5_000,
+    });
+    // Ingestion embeds the uploaded document, so an embed row must exist.
+    await expect(page.getByRole('cell', { name: 'embed' }).first()).toBeVisible({ timeout: 5_000 });
+    // And the token count must be non-zero, not just present.
+    await expect(page.getByRole('table')).toContainText(/\d/);
+  }).toPass({ timeout: 45_000 });
 });
 
 test('a signed-out visitor cannot reach the documents page', async ({ page }) => {

@@ -3,7 +3,6 @@ import { contentHash, type EmbeddingProvider } from '@kb/ai';
 import { chunkText, cleanText, diffChunks, hashChunk, type ExistingChunk } from '@kb/rag';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AiService } from '../ai/ai.service.js';
-import { ConfigService } from '../config/config.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
 
 export interface IngestionOutcome {
@@ -29,7 +28,6 @@ export class IngestionService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly ai: AiService,
-    private readonly config: ConfigService,
   ) {}
 
   async ingest(documentId: string): Promise<IngestionOutcome> {
@@ -44,6 +42,22 @@ export class IngestionService {
     // makes duplicate jobs cheap, and therefore what lets the queue stay free of
     // a debounce that could drop an update.
     if (doc.content_hash === docHash && doc.chunk_count > 0) {
+      // Tags still have to land. They are denormalised onto the chunks so the
+      // search functions can filter without a join, and a tags-only edit leaves
+      // the content hash untouched -- so without this the chunks keep the old
+      // tags and the document stops matching a search filtered by its own tag.
+      await this.syncTags(db, doc);
+      // Every update parks the document in `queued`, and this early return is
+      // the only path that then does no work -- so it is the only place that can
+      // clear it. Without this a re-saved document stays fully indexed and
+      // searchable while the UI shows "Queued" forever, which is indistinguishable
+      // from a worker that never picked the job up.
+      if (doc.status !== 'ready') {
+        await db
+          .from('documents')
+          .update({ status: 'ready', error_message: null })
+          .eq('id', documentId);
+      }
       return {
         documentId,
         chunksCreated: 0,
@@ -106,22 +120,19 @@ export class IngestionService {
       await db.from('chunks').delete().in('id', diff.deletedIds);
     }
 
-    // Reindex kept rows first. Indexes are unique per document, so shift them
-    // out of the way before inserting to avoid colliding mid-write.
-    for (const u of diff.unchanged) {
-      if (u.fromIndex !== u.toIndex) {
-        await db
-          .from('chunks')
-          .update({ chunk_index: -1 - u.toIndex })
-          .eq('id', u.id);
-      }
-    }
-    for (const u of diff.unchanged) {
-      if (u.fromIndex !== u.toIndex) {
-        await db.from('chunks').update({ chunk_index: u.toIndex, tags: doc.tags }).eq('id', u.id);
-      } else {
-        await db.from('chunks').update({ tags: doc.tags }).eq('id', u.id);
-      }
+    // Reindex kept rows before inserting, so the new rows do not collide with
+    // positions the survivors still occupy. One round trip for the whole
+    // document, and atomic: the loop this replaced issued two PostgREST calls
+    // per moved chunk, each committing separately, so a crash partway left
+    // rows stranded at the negative indexes used to dodge the unique
+    // constraint.
+    if (diff.unchanged.length > 0) {
+      const { error: reindexError } = await db.rpc('reindex_chunks', {
+        p_document_id: doc.id,
+        p_updates: diff.unchanged.map((u) => ({ id: u.id, to_index: u.toIndex })),
+        p_tags: doc.tags,
+      });
+      if (reindexError) throw new Error(`chunk reindex failed: ${reindexError.message}`);
     }
 
     if (diff.created.length > 0) {
@@ -159,6 +170,18 @@ export class IngestionService {
     };
   }
 
+  /**
+   * Brings `chunks.tags` back in line with the document.
+   *
+   * One statement for the whole document rather than a row at a time: the
+   * values are identical across every chunk, so there is nothing to iterate.
+   */
+  private async syncTags(db: SupabaseClient, doc: DocumentRow): Promise<void> {
+    const { error } = await db.from('chunks').update({ tags: doc.tags }).eq('document_id', doc.id);
+
+    if (error) this.logger.warn(`Tag sync failed for ${doc.id}: ${error.message}`);
+  }
+
   private async loadDocument(db: SupabaseClient, id: string): Promise<DocumentRow> {
     const { data, error } = await db
       .from('documents')
@@ -173,11 +196,6 @@ export class IngestionService {
 
   private async setStatus(db: SupabaseClient, id: string, status: string): Promise<void> {
     await db.from('documents').update({ status }).eq('id', id);
-  }
-
-  /** Embedding dimension the schema expects. Guards against a model swap. */
-  get expectedDimensions(): number {
-    return this.config.env.AI_EMBEDDING_DIMENSIONS;
   }
 }
 

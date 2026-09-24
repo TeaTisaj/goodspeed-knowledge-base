@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { createLocalJWKSet, createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { ConfigService } from '../config/config.service.js';
 
 export interface AuthenticatedUser {
@@ -84,5 +84,3 @@ function extractBearer(header?: string): string | undefined {
   const [scheme, value] = header.split(' ');
   return scheme?.toLowerCase() === 'bearer' && value ? value : undefined;
 }
-
-export { createLocalJWKSet };

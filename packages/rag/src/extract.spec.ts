@@ -32,7 +32,8 @@ describe('cleanExtractedText', () => {
 
   it('strips headers repeated across pages', () => {
     // Boilerplate on every chunk drags them all toward the same embedding.
-    const page = (n: number) => `ACME CONFIDENTIAL\nContent of page ${n} with real information.\nPage ${n}`;
+    const page = (n: number) =>
+      `ACME CONFIDENTIAL\nContent of page ${n} with real information.\nPage ${n}`;
     const doc = Array.from({ length: 10 }, (_, i) => page(i)).join('\n');
     const out = cleanExtractedText(doc);
 
@@ -102,9 +103,9 @@ describe('extractText', () => {
   });
 
   it('rejects an unsupported type by name', async () => {
-    await expect(
-      extractText(enc('MZ'), { mimeType: 'application/x-msdownload' }),
-    ).rejects.toThrow(/Unsupported file type/);
+    await expect(extractText(enc('MZ'), { mimeType: 'application/x-msdownload' })).rejects.toThrow(
+      /Unsupported file type/,
+    );
   });
 
   it('rejects an empty file', async () => {

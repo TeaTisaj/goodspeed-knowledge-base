@@ -63,7 +63,7 @@ jobs:
         run: pnpm exec supabase start
 
       # The integration tests read these from the environment. Locally they come
-      # from the .env that `pnpm setup` writes, which is gitignored and so absent
+      # from the .env that `pnpm bootstrap` writes, which is gitignored and so absent
       # here -- without this step every client is built with an empty key and the
       # suite fails with "supabaseKey is required" before touching a policy.
       # Read back from the CLI rather than hard-coded, so a change in the local
@@ -88,3 +88,41 @@ jobs:
       # because a mocked RLS test proves nothing about RLS.
       - name: Integration tests
         run: pnpm test:integration
+
+  e2e:
+    name: browser end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `pnpm bootstrap` is the same command a reviewer runs. Using it here
+      # means CI fails when the documented setup path breaks -- which is how the
+      # missing apps/web/.env.local went unnoticed: nothing ever exercised a
+      # clean checkout, because every local run already had the file.
+      - name: Bootstrap the stack
+        run: pnpm bootstrap
+
+      # Playwright's webServer starts the API and the web app and waits for each
+      # to answer on its own readiness URL.
+      - name: End-to-end tests
+        run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

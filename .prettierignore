@@ -5,3 +5,7 @@ dist
 coverage
 pnpm-lock.yaml
 supabase/.temp
+
+# Working notes, not part of the deliverable
+REVIEW.md
+role-description.md

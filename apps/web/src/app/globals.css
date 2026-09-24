@@ -9,6 +9,9 @@
   --color-accent: #2f6df6;
   --color-danger: #d1344a;
   --color-success: #16794c;
+  /* Degraded-but-working. Distinct from danger, which means something failed. */
+  --color-warning: #8a5a00;
+  --color-warning-surface: #fff8e6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +24,8 @@
     --color-accent: #6b9bff;
     --color-danger: #ff7a8a;
     --color-success: #4cc38a;
+    --color-warning: #e8b44a;
+    --color-warning-surface: #241d0e;
   }
 }
 

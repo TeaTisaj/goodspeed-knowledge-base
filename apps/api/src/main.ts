@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import type { ServerResponse } from 'node:http';
 import { Logger, StandardSchemaValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
@@ -14,6 +15,26 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: config.env.CORS_ORIGIN.split(',').map((o) => o.trim()),
     credentials: true,
+  });
+
+  /**
+   * Security headers, set directly rather than via helmet.
+   *
+   * This is a JSON API with no HTML responses and no cookies, so most of
+   * helmet's defaults are inert here and its CSP would need disabling anyway.
+   * Four headers actually earn their place; a dependency to set four headers is
+   * a dependency to audit for no benefit.
+   */
+  app.use((_req: unknown, res: ServerResponse, next: () => void) => {
+    // The API only ever answers with JSON, so a browser must never be talked
+    // into interpreting a response as script.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    // Nothing here is meant to be embedded or rendered; an empty CSP is the
+    // strictest correct answer for a pure JSON surface.
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    next();
   });
   // Enables the `schema` option on @Body/@Query/@Param across every controller.
   app.useGlobalPipes(new StandardSchemaValidationPipe({ transform: true }));

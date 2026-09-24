@@ -82,6 +82,23 @@ if (!existsSync(envPath)) {
   ok('.env already exists, left untouched');
 }
 
+/**
+ * The web app needs its own file, and this is not optional.
+ *
+ * Next.js resolves env per app directory and does not read a monorepo root
+ * `.env`, so `apps/web` cannot see the root file no matter what is in it.
+ * Without this the browser client is constructed with `undefined` Supabase
+ * credentials and sign-in fails on the first click -- with nothing in any log
+ * to say why. Both files are gitignored, so only this script can create them.
+ */
+const webEnvPath = resolve(root, 'apps', 'web', '.env.local');
+if (!existsSync(webEnvPath)) {
+  copyFileSync(resolve(root, 'apps', 'web', '.env.example'), webEnvPath);
+  ok('Created apps/web/.env.local from apps/web/.env.example');
+} else {
+  ok('apps/web/.env.local already exists, left untouched');
+}
+
 // --- 5. Supabase ----------------------------------------------------------
 console.log('\nStarting Supabase (first run downloads images, this can take a few minutes)\n');
 runLocal('supabase', ['start']);
@@ -102,22 +119,32 @@ try {
     .toString()
     .trim();
   const parsed = JSON.parse(status.slice(status.indexOf('{')));
+  const publishable = parsed.PUBLISHABLE_KEY ?? parsed.ANON_KEY;
+
+  /** Replaces a key in place, or appends it when the file does not have it yet. */
+  const set = (contents, key, value) =>
+    value === undefined || value === null
+      ? contents
+      : contents.match(new RegExp(`^${key}=.*$`, 'm'))
+        ? contents.replace(new RegExp(`^${key}=.*$`, 'm'), `${key}=${value}`)
+        : `${contents}\n${key}=${value}`;
+
   let env = readFileSync(envPath, 'utf8');
-
-  const set = (key, value) => {
-    if (!value) return;
-    env = env.match(new RegExp(`^${key}=.*$`, 'm'))
-      ? env.replace(new RegExp(`^${key}=.*$`, 'm'), `${key}=${value}`)
-      : `${env}\n${key}=${value}`;
-  };
-
-  set('SUPABASE_PUBLISHABLE_KEY', parsed.PUBLISHABLE_KEY ?? parsed.ANON_KEY);
-  set('SUPABASE_SECRET_KEY', parsed.SECRET_KEY ?? parsed.SERVICE_ROLE_KEY);
-  set('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', parsed.PUBLISHABLE_KEY ?? parsed.ANON_KEY);
+  env = set(env, 'SUPABASE_PUBLISHABLE_KEY', publishable);
+  env = set(env, 'SUPABASE_SECRET_KEY', parsed.SECRET_KEY ?? parsed.SERVICE_ROLE_KEY);
+  env = set(env, 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', publishable);
   writeFileSync(envPath, env);
   ok('Wrote local Supabase keys into .env');
+
+  // Same keys, second file. Kept in sync here rather than documented as a
+  // manual step, because a stale browser key fails in a way that looks like
+  // broken auth rather than broken configuration.
+  let webEnv = readFileSync(webEnvPath, 'utf8');
+  webEnv = set(webEnv, 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', publishable);
+  writeFileSync(webEnvPath, webEnv);
+  ok('Wrote local Supabase keys into apps/web/.env.local');
 } catch {
-  info('Could not read `supabase status`; .env keys left as-is (defaults are usually correct).');
+  info('Could not read `supabase status`; env keys left as-is (defaults are usually correct).');
 }
 
 // --- 8. Build shared packages --------------------------------------------

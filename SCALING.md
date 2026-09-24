@@ -21,7 +21,7 @@ first thing I would do and it requires no code.
 **Verified, not assumed.** With `WORKER_MODE=standalone` the API enqueues and a document stays
 `queued`; starting `node dist/main.worker.js` drains it while the API keeps serving HTTP. Worth
 saying because the first version of this claim was false — the worker only skipped when the mode was
-`off`, so setting `standalone` produced a *second* consumer rather than moving the first. A unit test
+`off`, so setting `standalone` produced a _second_ consumer rather than moving the first. A unit test
 now pins the invariant that exactly one consumer exists in each topology.
 
 ---
@@ -84,7 +84,7 @@ which is why usage tracking is per-provider and per-model from the start.
 **Symptom:** queue polling contends with application queries on the same Postgres.
 
 pg-boss is bounded by Postgres write throughput: hundreds to low thousands of jobs per second. This
-build does single-digit jobs per *minute*, so the headroom is roughly four orders of magnitude.
+build does single-digit jobs per _minute_, so the headroom is roughly four orders of magnitude.
 
 **The threshold for Redis is a number, not a feeling:** sustained **>500 jobs/second**, or queue
 polling showing up in `pg_stat_statements` as a top-10 query. Below that, BullMQ buys throughput
@@ -112,7 +112,7 @@ enqueue-with-write property that makes pg-boss correct here, and removes the con
 
 ---
 
-## 5. What I would *not* do
+## 5. What I would _not_ do
 
 **Move vectors to a dedicated store (Pinecone, Qdrant, Weaviate).** This is the obvious suggestion
 and I think it is wrong here, for a reason that is about correctness rather than performance:
@@ -136,11 +136,11 @@ that single-corpus Q&A does not show. The eval harness is how that decision shou
 Rough monthly figures, embeddings and infrastructure only — chat generation dominates and varies
 entirely with usage.
 
-| Tier | Chunks | Infrastructure | Embedding backfill |
-|---|---|---|---|
-| Hundreds of users | ~100k | Supabase small, single API box | ~$5 one-off |
-| Thousands | ~1M | Supabase medium, 2 API + 1 worker | ~$50 one-off |
-| Hundreds of thousands | ~50M | Dedicated Postgres + replica, partitioned, `halfvec` | ~$2,500 one-off |
+| Tier                  | Chunks | Infrastructure                                       | Embedding backfill |
+| --------------------- | ------ | ---------------------------------------------------- | ------------------ |
+| Hundreds of users     | ~100k  | Supabase small, single API box                       | ~$5 one-off        |
+| Thousands             | ~1M    | Supabase medium, 2 API + 1 worker                    | ~$50 one-off       |
+| Hundreds of thousands | ~50M   | Dedicated Postgres + replica, partitioned, `halfvec` | ~$2,500 one-off    |
 
 The shape worth noting: **infrastructure cost grows with corpus size, while LLM cost grows with
 usage.** They scale on different axes, which is why usage is tracked per provider and per model from

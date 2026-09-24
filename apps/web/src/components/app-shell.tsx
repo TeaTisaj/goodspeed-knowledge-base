@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from './auth-provider';
+import { ProviderBanner } from './provider-banner';
 import { Button } from './ui';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -45,6 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
       </header>
+      <ProviderBanner />
       <main className="flex-1 py-6">{children}</main>
     </div>
   );
