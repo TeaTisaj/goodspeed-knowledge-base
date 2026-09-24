@@ -1,0 +1,44 @@
+name: Provider drift
+
+# Presets record somebody else's base URLs and error conventions, and those rot
+# without anything in this repository changing. This job sends a deliberately
+# invalid key to every hosted provider and checks two things: that the endpoint
+# still answers where the preset says it does, and that its rejection still maps
+# to `auth`. No account, no secrets, no spend.
+#
+# Deliberately NOT on pull_request. It depends on seven third parties being up,
+# so a vendor's bad afternoon would block unrelated PRs. Weekly is the right
+# cadence for drift that takes months, and it can be run on demand.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  reachability:
+    name: preset URLs and auth mapping
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm build --filter @kb/ai
+
+      # Only the keyless suite. The credentialed contract suite is skipped by
+      # name here, because this workflow holds no secrets -- see the README.
+      - name: Probe every preset endpoint
+        run: pnpm --filter @kb/ai exec vitest run --config vitest.live.config.mts live/reachability.spec.ts

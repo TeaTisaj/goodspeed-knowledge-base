@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@kb/tsconfig/base.json",
+  "compilerOptions": {
+    // Extends base rather than ./tsconfig.json on purpose: the build config is
+    // `composite`, and a composite project cannot also be `noEmit`. This one
+    // only typechecks, so it takes the shared compiler settings without the
+    // project-reference machinery.
+    "noEmit": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*", "live/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
