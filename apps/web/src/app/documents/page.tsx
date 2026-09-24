@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '@/lib/api';
 import { Button, EmptyState, ErrorBanner, SkeletonRow, StatusBadge } from '@/components/ui';
+import { UploadButton } from '@/components/upload-button';
 
 export default function DocumentsPage() {
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null);
@@ -66,9 +67,17 @@ export default function DocumentsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-base font-semibold">Documents</h1>
-        <Button onClick={createDraft} disabled={creating} className="ml-auto">
-          {creating ? 'Creating...' : 'New document'}
-        </Button>
+        <div className="ml-auto flex gap-2">
+          <UploadButton
+            onUploaded={(id) => {
+              window.location.href = `/documents/${id}`;
+            }}
+            onError={setError}
+          />
+          <Button onClick={createDraft} disabled={creating}>
+            {creating ? 'Creating...' : 'New document'}
+          </Button>
+        </div>
       </div>
 
       {allTags.length > 0 && (
@@ -109,7 +118,7 @@ export default function DocumentsPage() {
           description={
             tag
               ? 'Try clearing the filter, or add this tag to a document.'
-              : 'Create a document, and it will be chunked and embedded automatically so you can ask questions about it.'
+              : 'Create a document or upload a PDF. It is chunked and embedded automatically so you can ask questions about it.'
           }
           action={<Button onClick={createDraft}>New document</Button>}
         />

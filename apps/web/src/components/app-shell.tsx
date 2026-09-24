@@ -12,6 +12,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const tabs = [
     { href: '/documents', label: 'Documents' },
     { href: '/chat', label: 'Chat' },
+    { href: '/usage', label: 'Usage' },
   ];
 
   return (

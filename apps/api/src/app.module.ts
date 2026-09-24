@@ -10,6 +10,7 @@ import { DocumentsModule } from './documents/documents.module.js';
 import { HealthController } from './health/health.controller.js';
 import { IngestionModule } from './ingestion/ingestion.module.js';
 import { SupabaseModule } from './supabase/supabase.module.js';
+import { UsageModule } from './usage/usage.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SupabaseModule } from './supabase/supabase.module.js';
         { name: 'default', ttl: 60_000, limit: 120 },
       ],
     }),
+    UsageModule,
     DocumentsModule,
     IngestionModule,
     ChatModule,

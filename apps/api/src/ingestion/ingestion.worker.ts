@@ -1,7 +1,9 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { Job } from 'pg-boss';
+import { AiService } from '../ai/ai.service.js';
 import { ConfigService } from '../config/config.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
+import { UsageService } from '../usage/usage.service.js';
 import { IngestionService } from './ingestion.service.js';
 import { INGEST_QUEUE, QueueService, type IngestJobData } from './queue.service.js';
 
@@ -21,6 +23,8 @@ export class IngestionWorker implements OnModuleInit {
     private readonly ingestion: IngestionService,
     private readonly supabase: SupabaseService,
     private readonly config: ConfigService,
+    private readonly ai: AiService,
+    private readonly usage: UsageService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -109,6 +113,9 @@ export class IngestionWorker implements OnModuleInit {
           })
           .eq('id', jobId);
       }
+
+      // Embedding cost belongs to the document's owner, not the worker.
+      void this.usage.record(ownerId, this.ai.drainUsage());
 
       this.logger.log(
         outcome.skipped

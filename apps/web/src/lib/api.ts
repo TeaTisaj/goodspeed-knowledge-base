@@ -10,6 +10,7 @@ import type {
   ProblemDetails,
   StreamEvent,
   UpdateDocumentInput,
+  UsageSummary,
 } from '@kb/contracts';
 import { supabaseBrowser } from './supabase';
 
@@ -86,6 +87,40 @@ export const api = {
   updateDocument: (id: string, body: UpdateDocumentInput) =>
     request<Document>(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteDocument: (id: string) => request<void>(`/documents/${id}`, { method: 'DELETE' }),
+  /**
+   * Uploads a file. Not routed through `request()` because the browser must set
+   * its own multipart boundary -- specifying Content-Type here would produce a
+   * boundary the server cannot parse.
+   */
+  uploadDocument: async (file: File): Promise<Document> => {
+    const form = new FormData();
+    form.append('file', file);
+
+    const res = await fetch(`${API_URL}/documents/upload`, {
+      method: 'POST',
+      headers: await authHeader(),
+      body: form,
+    });
+
+    if (!res.ok) {
+      let problem: ProblemDetails;
+      try {
+        problem = (await res.json()) as ProblemDetails;
+      } catch {
+        problem = {
+          type: 'about:blank',
+          title: res.status === 413 ? 'That file is too large' : 'Upload failed',
+          status: res.status,
+          code: 'validation_failed',
+        };
+      }
+      throw new ApiError(problem, res.status);
+    }
+    return (await res.json()) as Document;
+  },
+
+  usage: (days = 30) => request<UsageSummary>(`/usage?days=${days}`),
+
   listConversations: () => request<Conversation[]>('/chat/conversations'),
   listMessages: (id: string) => request<ChatMessage[]>(`/chat/conversations/${id}/messages`),
 };

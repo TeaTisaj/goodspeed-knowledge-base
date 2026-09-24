@@ -70,7 +70,7 @@ question
 | Path | What it is |
 |---|---|
 | `apps/api` | NestJS: documents, ingestion worker, retrieval, chat streaming |
-| `apps/web` | Next.js 16 App Router client |
+| `apps/web` | Next.js 16 App Router client: documents, chat, usage |
 | `packages/ai` | **Provider-agnostic AI layer.** Framework-free, so it reads on its own |
 | `packages/rag` | Chunking, hash diffing, rank fusion, prompt building. Pure functions |
 | `packages/contracts` | Zod schemas shared by server validation and client types |
@@ -201,7 +201,8 @@ Full reasoning in **[DECISIONS.md](DECISIONS.md)**. The ones worth knowing up fr
   8 documents; differences of one or two questions are noise, and the semantic-vs-keyword comparison
   is meaningless while the default embedder is lexical. This is the single most valuable next step,
   because it is what would justify changing the chunk size or turning the reranker on.
-- **PDF upload** — the ingestion path already supports it; only extraction is missing.
-- **Usage and cost view.** `usage_events` is already populated by the tracking decorator.
-- **Reranking on by default**, if the eval justifies the extra call.
+- **Reranking on by default**, if the eval justifies the extra call. The harness already measures
+  with and without it.
+- **OCR for scanned PDFs.** Upload currently detects them and says so rather than creating an empty
+  document, which is the right failure but not a solution.
 - **Observability**: retrieval hit rate and answer latency as real metrics, not logs.

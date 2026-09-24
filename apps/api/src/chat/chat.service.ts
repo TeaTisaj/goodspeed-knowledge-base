@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { AiService } from '../ai/ai.service.js';
 import { ConfigService } from '../config/config.service.js';
 import { RetrievalService } from '../retrieval/retrieval.service.js';
+import { UsageService } from '../usage/usage.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
 
 export interface AskParams {
@@ -48,6 +49,7 @@ export class ChatService {
     private readonly retrieval: RetrievalService,
     private readonly ai: AiService,
     private readonly config: ConfigService,
+    private readonly usage: UsageService,
   ) {}
 
   async *ask(params: AskParams): AsyncGenerator<StreamEvent> {
@@ -161,6 +163,12 @@ export class ChatService {
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId);
+
+      // Drain the buffered usage events the AI decorators emitted during this
+      // turn -- chat, the condense call, and every embedding -- and attribute
+      // them to this user. Never awaited before `done`: the answer is already
+      // complete, and analytics must not delay it.
+      void this.usage.record(params.userId, this.ai.drainUsage());
 
       yield { type: 'done', messageId: assistantMessageId };
     } catch (error) {
