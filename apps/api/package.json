@@ -11,7 +11,9 @@
     "test": "vitest run --project unit",
     "test:watch": "vitest",
     "test:integration": "vitest run --project integration",
-    "test:all": "vitest run"
+    "test:all": "vitest run",
+    "start:worker": "node dist/main.worker.js",
+    "dev:worker": "WORKER_MODE=standalone nest start --watch --entryFile main.worker"
   },
   "dependencies": {
     "@nestjs/common": "12.0.4",

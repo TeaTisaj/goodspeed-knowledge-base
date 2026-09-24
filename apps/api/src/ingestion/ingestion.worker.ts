@@ -6,6 +6,7 @@ import { SupabaseService } from '../supabase/supabase.service.js';
 import { UsageService } from '../usage/usage.service.js';
 import { IngestionService } from './ingestion.service.js';
 import { INGEST_QUEUE, QueueService, type IngestJobData } from './queue.service.js';
+import { isWorkerProcess } from './worker-process.js';
 
 /**
  * Subscribes to the ingest queue.
@@ -27,9 +28,34 @@ export class IngestionWorker implements OnModuleInit {
     private readonly usage: UsageService,
   ) {}
 
+  /**
+   * Whether *this process* should consume jobs.
+   *
+   *   inline      -> yes. One process does everything; one command locally.
+   *   standalone  -> only in the dedicated worker process. The API enqueues
+   *                  but does not consume, which is the entire point of the
+   *                  mode: without this check, setting `standalone` produced a
+   *                  second worker rather than moving the first one.
+   *   off         -> never.
+   */
+  private get shouldConsume(): boolean {
+    const mode = this.config.env.WORKER_MODE;
+    if (mode === 'off') return false;
+    if (mode === 'inline') return true;
+    return isWorkerProcess();
+  }
+
   async onModuleInit(): Promise<void> {
     const boss = this.queue.instance;
-    if (!boss || this.config.env.WORKER_MODE === 'off') return;
+    if (!boss) return;
+
+    if (!this.shouldConsume) {
+      this.logger.log(
+        `WORKER_MODE=${this.config.env.WORKER_MODE}: this process enqueues but does not consume. ` +
+          'Run `node dist/main.worker.js` to process jobs.',
+      );
+      return;
+    }
 
     await boss.work<IngestJobData>(
       INGEST_QUEUE,

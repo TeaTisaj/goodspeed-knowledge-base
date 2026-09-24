@@ -410,3 +410,27 @@ against 11% at 256. Part of the improvement is simply an easier problem. The def
 reasons the harness cannot measure — context budget and citation precision.
 
 Full numbers and caveats in [eval/RESULTS.md](eval/RESULTS.md).
+
+---
+
+## D23. Two false claims found by running the documentation
+
+SCALING.md described `WORKER_MODE=standalone` as the scaling story "demonstrated in code rather than
+asserted". Running it showed the assertion was the only part that existed.
+
+**The mode did nothing.** `IngestionWorker` only skipped when the mode was `off`, so setting
+`standalone` gave you a second consumer rather than moving the first. Fixed with an explicit
+`shouldConsume` gate: `inline` means the API consumes, `standalone` means only the dedicated worker
+process does, `off` means nothing does. A unit test pins the invariant that **exactly one** consumer
+exists in each topology — never zero, never two.
+
+**The worker started an HTTP server.** `main.worker.ts` imported `loadDotEnv` from `main.ts`, and
+importing `main.ts` executes its top-level `bootstrap()`. The "worker with no HTTP listener" crashed
+on `EADDRINUSE` against the API it was supposed to run beside. The loader moved to its own module,
+and a test asserts that module exports nothing but the loader.
+
+The general rule this produced: **a module with a top-level side effect must never also be a utility
+module.** Anything importable for one export will eventually be imported for it.
+
+Both bugs were invisible to every existing test, because nothing had ever run the second entrypoint.
+A claim in a document a reviewer will read is a claim that needs a test.

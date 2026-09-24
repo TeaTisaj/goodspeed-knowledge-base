@@ -18,6 +18,12 @@ The ingestion worker already has its own entrypoint (`main.worker.ts`). Moving i
 is `WORKER_MODE=standalone` and a second deployment — a topology change, not a rewrite. That is the
 first thing I would do and it requires no code.
 
+**Verified, not assumed.** With `WORKER_MODE=standalone` the API enqueues and a document stays
+`queued`; starting `node dist/main.worker.js` drains it while the API keeps serving HTTP. Worth
+saying because the first version of this claim was false — the worker only skipped when the mode was
+`off`, so setting `standalone` produced a *second* consumer rather than moving the first. A unit test
+now pins the invariant that exactly one consumer exists in each topology.
+
 ---
 
 ## 1. HNSW index build time and memory — breaks first, around 1M chunks
