@@ -38,6 +38,60 @@ describe('parseEnv', () => {
     );
   });
 
+  // The assignment's key requirement is that *any* OpenAI-spec provider swaps in
+  // through configuration. A closed enum here silently reduced that to the five
+  // providers with presets, and the README's documented escape hatch failed at
+  // boot. These lock the escape hatch open.
+  it('accepts a provider with no preset when it brings its own base URL', () => {
+    const env = parseEnv({
+      ...valid,
+      AI_CHAT_PROVIDER: 'acme-llm',
+      AI_CHAT_BASE_URL: 'https://api.acme.example/v1',
+      AI_CHAT_API_KEY: 'acme-key',
+      AI_EMBEDDING_PROVIDER: 'acme-llm',
+      AI_EMBEDDING_BASE_URL: 'https://api.acme.example/v1',
+      AI_EMBEDDING_API_KEY: 'acme-key',
+    } as NodeJS.ProcessEnv);
+    expect(env.AI_CHAT_PROVIDER).toBe('acme-llm');
+    expect(env.AI_EMBEDDING_PROVIDER).toBe('acme-llm');
+  });
+
+  it('does not demand a key from a self-hosted endpoint', () => {
+    const env = parseEnv({
+      ...valid,
+      AI_CHAT_PROVIDER: 'internal-gateway',
+      AI_CHAT_BASE_URL: 'http://gateway.internal:8080/v1',
+    } as NodeJS.ProcessEnv);
+    expect(env.AI_CHAT_PROVIDER).toBe('internal-gateway');
+  });
+
+  // Openness must not cost the typo check: a name with no preset and no base URL
+  // is still a mistake, and the message has to name the fix.
+  it('rejects an unknown provider that brings no base URL, and says how to fix it', () => {
+    expect(() => parseEnv({ ...valid, AI_CHAT_PROVIDER: 'opemai' } as NodeJS.ProcessEnv)).toThrow(
+      /Unknown chat provider "opemai".*AI_CHAT_BASE_URL/s,
+    );
+  });
+
+  it('rejects an unknown embedding provider that brings no base URL', () => {
+    expect(() =>
+      parseEnv({ ...valid, AI_EMBEDDING_PROVIDER: 'gorq' } as NodeJS.ProcessEnv),
+    ).toThrow(/Unknown embedding provider "gorq".*AI_EMBEDDING_BASE_URL/s);
+  });
+
+  // The provider list is derived from the preset table rather than restated, so
+  // a preset added to the AI layer is configurable without touching this file.
+  it('accepts every provider the AI layer ships a preset for', () => {
+    for (const provider of ['openai', 'groq', 'together', 'openrouter', 'ollama']) {
+      const env = parseEnv({
+        ...valid,
+        AI_CHAT_PROVIDER: provider,
+        AI_CHAT_API_KEY: 'key',
+      } as NodeJS.ProcessEnv);
+      expect(env.AI_CHAT_PROVIDER).toBe(provider);
+    }
+  });
+
   it('does not require a key for ollama, which is unauthenticated locally', () => {
     const env = parseEnv({ ...valid, AI_CHAT_PROVIDER: 'ollama' } as NodeJS.ProcessEnv);
     expect(env.AI_CHAT_PROVIDER).toBe('ollama');

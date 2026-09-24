@@ -434,3 +434,56 @@ module.** Anything importable for one export will eventually be imported for it.
 
 Both bugs were invisible to every existing test, because nothing had ever run the second entrypoint.
 A claim in a document a reviewer will read is a claim that needs a test.
+
+## D24. The swappability claim was false, and only a live swap found it
+
+**Decision:** provider names are an open string validated against the preset table, not a closed
+enum. Any name is accepted when it supplies a base URL.
+
+The assignment calls the provider-agnostic layer a key requirement, so it got the most design
+attention: capability modelling, a preset table, a contract suite running shared expectations
+against every implementation. All of it passed. The README documented the escape hatch for
+"any other OpenAI-compatible service" as `AI_CHAT_PROVIDER=custom` plus a base URL.
+
+That configuration did not boot:
+
+```
+ERROR [ExceptionHandler] Error: Invalid environment configuration:
+  - AI_CHAT_PROVIDER: Invalid option: expected one of "openai"|"groq"|"together"|"openrouter"|"ollama"|"fake"
+```
+
+`packages/ai` was never the problem. `validateChatConfig` and `buildBareChat` both fall through to
+an explicit `baseUrl` when no preset matches, and the error text already said *"For any other
+OpenAI-compatible service, set AI_CHAT_BASE_URL explicitly."* The layer was genuinely open. Then
+`apps/api/src/config/env.schema.ts` restated the provider list as a `z.enum` and closed it again —
+so the config supported five providers while the layer beneath it supported any. The requirement
+was "any provider following the OpenAI API specification", and what actually shipped was a
+hard-coded list of five.
+
+**Why the tests missed it.** Every test of the provider layer instantiates the provider layer. Not
+one of them goes through `parseEnv`, because the layer is deliberately framework-free and knows
+nothing about environment variables. The bug lived precisely in the seam between two well-tested
+components, which is where this class of bug always lives. A stub inside the test suite cannot
+prove that an unknown provider works, because the stub is application code and the test author
+already knows about it.
+
+**What found it.** An OpenAI-spec HTTP server outside the repository, given a name the codebase
+has never contained, pointed at with nothing but environment variables. The app ingested a
+document through its `/embeddings`, streamed an answer from its `/chat/completions`, and resolved
+a citation from the result. The server recorded the forwarded `Authorization` header and both
+model names, so the evidence is on both sides of the wire.
+
+**The fix removes the duplication rather than extending the list.** `CHAT_PROVIDERS` is now derived
+from `CHAT_PRESETS`, so adding a preset makes it configurable with no second edit — which is what
+the presets docstring already promised. Openness does not cost the typo check: a name with no
+preset *and* no base URL is still rejected at boot, now with a message naming the fix. API keys are
+demanded only when the preset says the service requires one, so a self-hosted endpoint needs no
+fake key to satisfy a validator.
+
+**Alternative rejected:** adding `'custom'` to the enum. It would have made the README's example
+work while leaving the real defect in place — the config would still have owned a copy of the
+provider list, and the next preset added to the AI layer would still have been unreachable.
+
+Related: [D8](#d8-capability-modelling-is-the-abstraction-not-the-base-url),
+[D11](#d11-the-contract-suite-is-what-makes-swappable-a-testable-claim),
+[D23](#d23-two-false-claims-found-by-running-the-documentation).

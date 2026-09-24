@@ -100,11 +100,14 @@ AI_EMBEDDING_PROVIDER=ollama
 AI_EMBEDDING_MODEL=nomic-embed-text
 AI_EMBEDDING_DIMENSIONS=768     # must match the vector column
 
-# Any other OpenAI-compatible service
-AI_CHAT_PROVIDER=custom
-AI_CHAT_BASE_URL=https://your-endpoint/v1
+# Any other OpenAI-spec service: name it whatever you like and give it an endpoint
+AI_CHAT_PROVIDER=acme-llm
+AI_CHAT_BASE_URL=https://api.acme.example/v1
 AI_CHAT_API_KEY=...
 ```
+
+A provider with no preset is valid as long as it brings its own base URL. A name with
+neither is a typo, and is rejected at boot with a message naming the fix.
 
 **The abstraction is capability modelling, not the base URL.** The OpenAI SDK already accepts a
 `baseURL`; that is a config field, not a design. What actually breaks on a swap is what each provider
@@ -127,6 +130,7 @@ Honest accounting of what was actually exercised, rather than a list of five log
 | Provider | Chat | Embeddings | How |
 |---|---|---|---|
 | `fake` | ✅ | ✅ | Default. Deterministic, offline, zero keys |
+| **Unknown third party** | ✅ | ✅ | **Live.** A server the app has never heard of, reached by changing environment variables only |
 | OpenAI | ✅ | ✅ | Stubbed transport in the contract suite |
 | Groq | ✅ | — | Stubbed. No embeddings endpoint, rejected at boot by design |
 | Together | ✅ | ✅ | Stubbed |
@@ -135,6 +139,13 @@ Honest accounting of what was actually exercised, rather than a list of five log
 
 The contract suite runs one shared set of expectations against **every** implementation, so
 "swappable" is a tested claim rather than a README claim.
+
+That suite is still application code, though, so it cannot prove the claim on its own. The row
+above it was earned differently: an OpenAI-spec server outside the repository, named `acme-llm`,
+pointed at by environment variables alone with no rebuild. The app ingested a document through
+its embeddings endpoint, streamed an answer from its chat endpoint, and resolved a citation from
+it. **The first attempt failed** — see [DECISIONS.md](DECISIONS.md) D24, which is the reason this
+row exists at all.
 
 ---
 

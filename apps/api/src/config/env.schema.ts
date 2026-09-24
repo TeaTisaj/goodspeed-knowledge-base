@@ -1,3 +1,4 @@
+import { CHAT_PRESETS, EMBEDDING_PRESETS } from '@kb/ai';
 import { z } from 'zod';
 
 /**
@@ -9,18 +10,27 @@ import { z } from 'zod';
 
 const nonEmpty = z.string().trim().min(1);
 
-/** Providers that speak the OpenAI `/v1/chat/completions` wire protocol. */
-export const CHAT_PROVIDERS = [
-  'openai',
-  'groq',
-  'together',
-  'openrouter',
-  'ollama',
-  'fake',
-] as const;
+/**
+ * Providers that ship with a preset, plus the offline `fake`.
+ *
+ * Derived from the AI layer rather than restated here. A second copy of this
+ * list is how the two drift, and drift in *this* direction is invisible: the
+ * config silently supports fewer providers than the layer does, and the
+ * assignment's key requirement is the breadth of that list.
+ *
+ * A provider absent from both lists is still valid -- it just has to bring its
+ * own base URL. That is what makes "any OpenAI-spec provider" true rather than
+ * "these five".
+ */
+export const CHAT_PROVIDERS = [...Object.keys(CHAT_PRESETS), 'fake'] as const;
 
 /** Providers exposing `/v1/embeddings`. Groq has no embeddings endpoint, so it is absent. */
-export const EMBEDDING_PROVIDERS = ['openai', 'together', 'openrouter', 'ollama', 'fake'] as const;
+export const EMBEDDING_PROVIDERS = [...Object.keys(EMBEDDING_PRESETS), 'fake'] as const;
+
+/** A provider is configurable when it has a preset, or when it names its own endpoint. */
+function resolvable(provider: string, known: readonly string[], baseUrl: string | undefined) {
+  return known.includes(provider) || baseUrl !== undefined;
+}
 
 export const envSchema = z
   .object({
@@ -51,12 +61,12 @@ export const envSchema = z
 
     // AI: chat and embeddings are configured independently, because a realistic
     // deployment mixes them (e.g. chat on Groq, embeddings on OpenAI).
-    AI_CHAT_PROVIDER: z.enum(CHAT_PROVIDERS).default('fake'),
+    AI_CHAT_PROVIDER: nonEmpty.default('fake'),
     AI_CHAT_MODEL: nonEmpty.default('gpt-5.6'),
     AI_CHAT_BASE_URL: z.url().optional(),
     AI_CHAT_API_KEY: z.string().optional(),
 
-    AI_EMBEDDING_PROVIDER: z.enum(EMBEDDING_PROVIDERS).default('fake'),
+    AI_EMBEDDING_PROVIDER: nonEmpty.default('fake'),
     AI_EMBEDDING_MODEL: nonEmpty.default('text-embedding-3-small'),
     AI_EMBEDDING_BASE_URL: z.url().optional(),
     AI_EMBEDDING_API_KEY: z.string().optional(),
@@ -77,26 +87,53 @@ export const envSchema = z
       .transform((v) => v === 'true'),
     MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(8000),
   })
-  // A real provider needs a key; `fake` deliberately needs nothing so the app
-  // boots with zero credentials.
-  .refine(
-    (e) => e.AI_CHAT_PROVIDER === 'fake' || e.AI_CHAT_PROVIDER === 'ollama' || !!e.AI_CHAT_API_KEY,
-    {
-      message: 'AI_CHAT_API_KEY is required unless AI_CHAT_PROVIDER is "fake" or "ollama"',
-      path: ['AI_CHAT_API_KEY'],
-    },
-  )
-  .refine(
-    (e) =>
-      e.AI_EMBEDDING_PROVIDER === 'fake' ||
-      e.AI_EMBEDDING_PROVIDER === 'ollama' ||
-      !!e.AI_EMBEDDING_API_KEY,
-    {
-      message:
-        'AI_EMBEDDING_API_KEY is required unless AI_EMBEDDING_PROVIDER is "fake" or "ollama"',
-      path: ['AI_EMBEDDING_API_KEY'],
-    },
-  );
+  /**
+   * A provider must be reachable, and a provider that requires a key must have
+   * one. Both are decided by the preset table, so neither restates a provider
+   * list that could fall out of date.
+   */
+  .superRefine((e, ctx) => {
+    if (!resolvable(e.AI_CHAT_PROVIDER, CHAT_PROVIDERS, e.AI_CHAT_BASE_URL)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AI_CHAT_PROVIDER'],
+        message:
+          `Unknown chat provider "${e.AI_CHAT_PROVIDER}". Providers with a preset: ` +
+          `${CHAT_PROVIDERS.join(', ')}. Any other service following the OpenAI spec works ` +
+          'by also setting AI_CHAT_BASE_URL to its /v1 endpoint.',
+      });
+    }
+    if (!resolvable(e.AI_EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS, e.AI_EMBEDDING_BASE_URL)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AI_EMBEDDING_PROVIDER'],
+        message:
+          `Unknown embedding provider "${e.AI_EMBEDDING_PROVIDER}". Providers with a preset: ` +
+          `${EMBEDDING_PROVIDERS.join(', ')}. Any other service following the OpenAI spec works ` +
+          'by also setting AI_EMBEDDING_BASE_URL to its /v1 endpoint.',
+      });
+    }
+
+    // `fake` needs nothing so the app boots with zero credentials; Ollama runs
+    // unauthenticated; a self-hosted endpoint may or may not want a key, so it
+    // is asked for only when a preset says the service requires one.
+    const chatPreset = CHAT_PRESETS[e.AI_CHAT_PROVIDER as keyof typeof CHAT_PRESETS];
+    if (chatPreset?.requiresApiKey && !e.AI_CHAT_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AI_CHAT_API_KEY'],
+        message: `AI_CHAT_API_KEY is required for provider "${e.AI_CHAT_PROVIDER}".`,
+      });
+    }
+    const embedPreset = EMBEDDING_PRESETS[e.AI_EMBEDDING_PROVIDER as keyof typeof EMBEDDING_PRESETS];
+    if (embedPreset?.requiresApiKey && !e.AI_EMBEDDING_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AI_EMBEDDING_API_KEY'],
+        message: `AI_EMBEDDING_API_KEY is required for provider "${e.AI_EMBEDDING_PROVIDER}".`,
+      });
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 
