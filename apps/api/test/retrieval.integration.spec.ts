@@ -1,3 +1,4 @@
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildEmbeddingProvider } from '@kb/ai';
 import { chunkText, hashChunk } from '@kb/rag';
@@ -193,5 +194,41 @@ describe('retrieval', () => {
   it('survives punctuation that would break a raw tsquery', async () => {
     // websearch_to_tsquery tolerates this; to_tsquery would throw.
     await expect(search('what about "roll back" & deploy!?')).resolves.toBeDefined();
+  });
+  it('reaches the HNSW and full-text indexes', async () => {
+    // With seq scans disabled the planner takes an index whenever the query
+    // shape allows one, so an unchanged counter means the function cannot
+    // use it at all (e.g. a materialized CTE between the arm and the table).
+    const client = new pg.Client({
+      connectionString:
+        process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres',
+    });
+    await client.connect();
+    const scans = async () => {
+      await client.query('select pg_stat_force_next_flush()');
+      const { rows } = await client.query<{ indexrelname: string; idx_scan: string }>(
+        `select indexrelname, idx_scan from pg_stat_user_indexes
+          where indexrelname in ('chunks_embedding_idx', 'chunks_fts_idx')`,
+      );
+      return Object.fromEntries(rows.map((r) => [r.indexrelname, Number(r.idx_scan)]));
+    };
+
+    try {
+      const before = await scans();
+      const { embeddings } = await embedder.embed({ texts: ['roll back a deploy'] });
+      await client.query('begin');
+      await client.query('set local enable_seqscan = off');
+      await client.query('select * from public.hybrid_search($1, $2::extensions.vector, 10)', [
+        'roll back a deploy',
+        JSON.stringify(embeddings[0]),
+      ]);
+      await client.query('commit');
+      const after = await scans();
+
+      expect(after.chunks_embedding_idx).toBeGreaterThan(before.chunks_embedding_idx ?? 0);
+      expect(after.chunks_fts_idx).toBeGreaterThan(before.chunks_fts_idx ?? 0);
+    } finally {
+      await client.end();
+    }
   });
 });
