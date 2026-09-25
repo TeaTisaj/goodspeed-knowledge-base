@@ -10,19 +10,20 @@ import {
 import {
   acceptCondensed,
   acceptHypothetical,
-  buildHypotheticalAnswerPrompt,
-  fuseExpansion,
-  HYDE_MAX_TOKENS,
   buildChatMessages,
   buildCondensePrompt,
+  buildHypotheticalAnswerPrompt,
   calibratedRelevanceFloor,
   CONDENSE_MAX_TOKENS,
   countTokens,
   detectInjectionSignals,
+  fuseExpansion,
+  HYDE_MAX_TOKENS,
   resolveCitations,
   selectRelevant,
   type RetrievedChunk,
 } from '@kb/rag';
+import type { ChatMessage } from '@kb/ai';
 import { randomUUID } from 'node:crypto';
 import { AiService } from '../ai/ai.service.js';
 import { ConfigService } from '../config/config.service.js';
@@ -33,12 +34,11 @@ import { SupabaseService } from '../supabase/supabase.service.js';
 /** Most recent messages carried into the prompt and the condenser. */
 const HISTORY_TURNS = 10;
 
-/**
- * Sent verbatim when retrieval finds nothing relevant. No model is called, so
- * the refusal costs nothing, cannot be talked out of, and is identical every
- * time -- which is what makes it testable.
- */
+/** Sent when nothing retrieved is relevant. No model call, so it costs nothing and cannot be argued with. */
 const NOTHING_RELEVANT = `${NO_ANSWER} None of your documents look related to this question — try rephrasing it, or check the document you expect has finished indexing.`;
+
+type HistoryMessage = { role: 'user' | 'assistant'; content: string };
+type UsageEvents = Parameters<UsageService['record']>[1];
 
 export interface AskParams {
   accessToken: string;
@@ -50,21 +50,28 @@ export interface AskParams {
   signal?: AbortSignal;
 }
 
+/** State shared by the steps of one turn. */
+interface Turn {
+  params: AskParams;
+  conversationId: string;
+  messageId: string;
+  startedAt: number;
+  usageEvents: UsageEvents;
+}
+
+interface Answer {
+  text: string;
+  promptTokens: number;
+  completionTokens: number;
+  finishReason?: string;
+}
+
 /**
- * The RAG workflow.
+ * The RAG workflow: [follow-ups only] condense -> retrieve -> relevance floor
+ * -> [optional HyDE, rerank] -> build prompt -> stream -> persist.
  *
- *   [multi-turn only] condense -> embed -> hybrid retrieve -> [optional rerank]
- *   -> build prompt -> stream -> persist
- *
- * This is a workflow, not an agent: the steps are fixed, the model never
- * chooses control flow, and cost and latency are bounded. The only model call
- * beyond the answer is query condensation, and it runs only when there is
- * history to condense -- without it, "what about the second one?" embeds to
- * nothing useful and retrieval returns noise.
- *
- * Agentic retrieval was considered and rejected: it needs iteration budgets and
- * stop conditions to avoid running away on cost, and on single-corpus Q&A it
- * does not pay for itself.
+ * A workflow rather than an agent: the steps are fixed and the model never
+ * chooses control flow, so cost and latency are bounded. See DECISIONS.md.
  */
 @Injectable()
 export class ChatService {
@@ -80,21 +87,12 @@ export class ChatService {
 
   async *ask(params: AskParams): AsyncGenerator<StreamEvent> {
     const startedAt = Date.now();
-    // Opened before any provider call, so every embedding, condense and chat
-    // token emitted during this turn lands in this request's own bucket rather
-    // than a buffer shared with whoever else is mid-answer.
+    // Opened before any provider call so this turn's tokens land in its own bucket.
     const usageEvents = this.ai.beginUsageScope();
 
     try {
-      const conversationId = await this.ensureConversation(
-        params.accessToken,
-        params.userId,
-        params.conversationId,
-        params.question,
-      );
-
+      const conversationId = await this.ensureConversation(params);
       const history = await this.loadHistory(params.accessToken, conversationId);
-
       await this.saveMessage(params.accessToken, {
         conversationId,
         ownerId: params.userId,
@@ -102,115 +100,34 @@ export class ChatService {
         content: params.question,
       });
 
-      const assistantMessageId = randomUUID();
-      yield { type: 'start', conversationId, messageId: assistantMessageId };
+      const turn: Turn = {
+        params,
+        conversationId,
+        messageId: randomUUID(),
+        startedAt,
+        usageEvents,
+      };
+      yield { type: 'start', conversationId, messageId: turn.messageId };
 
-      // --- 1. condense, only when there is history ---------------------------
-      let searchQuery = params.question;
-      if (history.length > 0) {
-        yield { type: 'status', stage: 'condensing' };
-        searchQuery = await this.condense(history, params.question, params.signal);
-      }
-
-      // --- 2. retrieve -------------------------------------------------------
-      yield { type: 'status', stage: 'retrieving' };
-      const candidates = await this.retrieval.retrieve(params.accessToken, searchQuery, {
-        tags: params.tags,
-        documentIds: params.documentIds,
-        limit: this.config.env.RETRIEVAL_CANDIDATES,
-      });
-      let chunks = selectRelevant(candidates, this.relevanceFloor);
-
+      const searchQuery = yield* this.searchQuery(history, params);
+      const chunks = yield* this.retrieveContext(searchQuery, params);
       if (chunks.length === 0) {
-        yield* this.refuseWithoutModel({
-          accessToken: params.accessToken,
-          userId: params.userId,
-          conversationId,
-          assistantMessageId,
-          startedAt,
-          usageEvents,
-        });
+        yield* this.refuseWithoutModel(turn);
         return;
       }
 
-      // Expansion runs only after the floor has found something relevant to
-      // the user's own question, so it can improve an answer but never create
-      // one for a question the documents do not cover.
-      if (this.config.env.RETRIEVAL_HYDE) {
-        const hypothesis = await this.hypothesise(searchQuery, params.signal);
-        if (hypothesis) {
-          const expansion = await this.retrieval.retrieve(params.accessToken, hypothesis, {
-            tags: params.tags,
-            documentIds: params.documentIds,
-            limit: this.config.env.RETRIEVAL_CANDIDATES,
-          });
-          chunks = fuseExpansion(chunks, expansion, this.config.env.RETRIEVAL_CANDIDATES);
-        }
-      }
-
-      if (this.retrieval.rerankEnabled) {
-        chunks = await this.retrieval.rerank(searchQuery, chunks, this.config.env.RETRIEVAL_TOP_K);
-      } else {
-        chunks = chunks.slice(0, this.config.env.RETRIEVAL_TOP_K);
-      }
-
-      // --- 3. build the prompt ----------------------------------------------
-      // The ceiling comes from the provider that will actually serve the
-      // request, not from a constant: swapping a 400k-window model for an 8k
-      // one must move this number, or the first swap overflows the window.
-      // MAX_CONTEXT_TOKENS is the override, and the lower of the two wins.
-      const providerWindow = this.ai.chat.capabilities.maxContextTokens;
-      const maxContextTokens = Math.min(this.config.env.MAX_CONTEXT_TOKENS, providerWindow);
-
-      // History and the question are already committed, so they come out of the
-      // budget before the sources are fitted to what is left.
-      const { messages, used } = buildChatMessages(
-        { chunks, history, question: params.question },
-        { maxContextTokens, countTokens },
-      );
+      const { messages, used } = this.buildPrompt(chunks, history, params.question);
       const flaggedSources = this.logInjectionSignals(used);
-
-      // Sources are emitted before the answer so the UI can render them while
-      // the text is still streaming. These are the candidates the model was
-      // given, which is not the same set as the ones it ended up citing -- the
-      // narrowed set is sent again as `citations` once the answer is complete.
+      // Candidates first, so the UI can show them while the answer streams.
       yield { type: 'sources', sources: this.toCitations(used) };
 
-      // --- 4. stream the answer ---------------------------------------------
-      yield { type: 'status', stage: 'generating' };
-
-      let answer = '';
-      let promptTokens = 0;
-      let completionTokens = 0;
-      let finishReason: string | undefined;
-
-      for await (const event of this.ai.chat.streamChat({
-        messages,
-        temperature: 0.2,
-        maxTokens: this.config.env.AI_ANSWER_MAX_TOKENS,
-        signal: params.signal,
-      })) {
-        if (event.type === 'text') {
-          answer += event.delta;
-          yield { type: 'token', delta: event.delta };
-        } else if (event.type === 'usage') {
-          promptTokens = event.usage.promptTokens;
-          completionTokens = event.usage.completionTokens;
-        } else if (event.type === 'done') {
-          finishReason = event.finishReason;
-        }
-      }
-
-      // A reasoning model that exhausts its budget before writing anything
-      // returns an empty answer with `finish_reason: length` and no error. Saved
-      // as-is, that is a blank message recorded as a success; it is a failure,
-      // and the operator needs to know which knob to turn.
-      if (answer.trim() === '') {
+      const answer = yield* this.streamAnswer(messages, params.signal);
+      if (answer.text.trim() === '') {
         this.logger.error(
-          `Empty answer from ${this.ai.chat.id}/${this.ai.chat.model} (finish_reason=${finishReason ?? 'unknown'}). ` +
+          `Empty answer from ${this.ai.chat.id}/${this.ai.chat.model} (finish_reason=${answer.finishReason ?? 'unknown'}). ` +
             'If this is a reasoning model, raise AI_ANSWER_MAX_TOKENS.',
         );
-        void this.usage.record(params.userId, usageEvents.splice(0));
+        this.recordUsage(turn);
         yield {
           type: 'error',
           code: 'empty_answer',
@@ -218,79 +135,11 @@ export class ChatService {
         };
         return;
       }
-      if (finishReason === 'length') {
-        this.logger.warn(
-          `Answer truncated at AI_ANSWER_MAX_TOKENS=${this.config.env.AI_ANSWER_MAX_TOKENS}.`,
-        );
-      }
 
-      yield {
-        type: 'usage',
-        promptTokens,
-        completionTokens,
-        provider: this.ai.chat.id,
-        model: this.ai.chat.model,
-      };
-
-      // --- 5. persist --------------------------------------------------------
-      // Citations are resolved from what the model actually emitted, so an
-      // uncited answer records no citations rather than implying support.
-      const resolved = resolveCitations(answer, used);
-
-      // Replaces the candidate list in the UI with what was actually cited.
-      // Without this the live view showed every retrieved chunk while the
-      // stored message kept only the cited ones, so reloading a conversation
-      // silently changed its citations.
-      yield {
-        type: 'citations',
-        citations: resolved.map((c) => ({
-          number: c.number,
-          chunkId: c.chunkId,
-          documentId: c.documentId,
-          documentTitle: c.documentTitle,
-          quote: c.quote,
-        })),
-      };
-
-      await this.saveMessage(params.accessToken, {
-        id: assistantMessageId,
-        conversationId,
-        ownerId: params.userId,
-        role: 'assistant',
-        content: answer,
-        provider: this.ai.chat.id,
-        model: this.ai.chat.model,
-        promptTokens,
-        completionTokens,
-        latencyMs: Date.now() - startedAt,
-        citations: resolved,
-        grounding: classifyGrounding(answer, resolved.length),
-        flaggedSources,
-      });
-      this.logTurn({
-        grounding: classifyGrounding(answer, resolved.length),
-        refusedWithoutModel: false,
-        flaggedSources,
-        sources: used.length,
-        latencyMs: Date.now() - startedAt,
-      });
-
-      await this.touchConversation(params.accessToken, conversationId);
-
-      // Everything this turn consumed -- chat, the condense call, every
-      // embedding -- attributed to the user who caused it. Never awaited before
-      // `done`: the answer is already complete, and analytics must not delay it.
-      void this.usage.record(params.userId, usageEvents.splice(0));
-
-      yield { type: 'done', messageId: assistantMessageId };
+      yield* this.finishAnswer(turn, answer, used, flaggedSources);
     } catch (error) {
-      // Once the response has started there is no status code left to set, so
-      // a failure is an event in the stream. The alternative -- throwing --
-      // leaves the client hanging on a half-written response.
+      // Headers are already sent, so a failure has to be an event in the stream.
       this.logger.error(`Chat failed: ${(error as Error).message}`);
-      // A turn that failed halfway still spent tokens. Recording them here is
-      // what stops the failure path leaking usage that would otherwise be
-      // attributed to whoever asked next.
       void this.usage.record(params.userId, usageEvents.splice(0));
       yield {
         type: 'error',
@@ -300,24 +149,212 @@ export class ChatService {
     }
   }
 
-  private async touchConversation(accessToken: string, conversationId: string): Promise<void> {
-    await this.supabase
-      .forUser(accessToken)
-      .from('conversations')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', conversationId);
+  // --- steps ----------------------------------------------------------------
+
+  /** Follow-ups are rewritten into a standalone question; first turns are searched as-is. */
+  private async *searchQuery(
+    history: HistoryMessage[],
+    params: AskParams,
+  ): AsyncGenerator<StreamEvent, string> {
+    if (history.length === 0) return params.question;
+    yield { type: 'status', stage: 'condensing' };
+    return this.condense(history, params.question, params.signal);
   }
 
-  /** The configured floor, else the one measured for this embedding model, else none. */
-  private get relevanceFloor(): number {
-    return (
-      this.config.env.RETRIEVAL_MIN_SIMILARITY ??
-      calibratedRelevanceFloor(this.ai.embeddings.model) ??
-      0
+  /** Hybrid search, the relevance floor, then optional expansion and rerank. Empty means refuse. */
+  private async *retrieveContext(
+    searchQuery: string,
+    params: AskParams,
+  ): AsyncGenerator<StreamEvent, RetrievedChunk[]> {
+    yield { type: 'status', stage: 'retrieving' };
+    const { RETRIEVAL_CANDIDATES, RETRIEVAL_TOP_K, RETRIEVAL_HYDE } = this.config.env;
+    const filters = { tags: params.tags, documentIds: params.documentIds };
+
+    const candidates = await this.retrieval.retrieve(params.accessToken, searchQuery, {
+      ...filters,
+      limit: RETRIEVAL_CANDIDATES,
+    });
+    let chunks = selectRelevant(candidates, this.relevanceFloor);
+    if (chunks.length === 0) return chunks;
+
+    // After the floor, so expansion can improve an answer but never create one.
+    if (RETRIEVAL_HYDE) {
+      const hypothesis = await this.hypothesise(searchQuery, params.signal);
+      if (hypothesis) {
+        const expansion = await this.retrieval.retrieve(params.accessToken, hypothesis, {
+          ...filters,
+          limit: RETRIEVAL_CANDIDATES,
+        });
+        chunks = fuseExpansion(chunks, expansion, RETRIEVAL_CANDIDATES);
+      }
+    }
+
+    return this.retrieval.rerankEnabled
+      ? this.retrieval.rerank(searchQuery, chunks, RETRIEVAL_TOP_K)
+      : chunks.slice(0, RETRIEVAL_TOP_K);
+  }
+
+  /** Fits sources into the smaller of the configured budget and the provider's window. */
+  private buildPrompt(chunks: RetrievedChunk[], history: HistoryMessage[], question: string) {
+    const maxContextTokens = Math.min(
+      this.config.env.MAX_CONTEXT_TOKENS,
+      this.ai.chat.capabilities.maxContextTokens,
     );
+    return buildChatMessages({ chunks, history, question }, { maxContextTokens, countTokens });
   }
 
-  /** A plausible answer to embed alongside the question, or null. Never fails the turn. */
+  private async *streamAnswer(
+    messages: ChatMessage[],
+    signal?: AbortSignal,
+  ): AsyncGenerator<StreamEvent, Answer> {
+    yield { type: 'status', stage: 'generating' };
+    const answer: Answer = { text: '', promptTokens: 0, completionTokens: 0 };
+
+    for await (const event of this.ai.chat.streamChat({
+      messages,
+      temperature: 0.2,
+      maxTokens: this.config.env.AI_ANSWER_MAX_TOKENS,
+      signal,
+    })) {
+      if (event.type === 'text') {
+        answer.text += event.delta;
+        yield { type: 'token', delta: event.delta };
+      } else if (event.type === 'usage') {
+        answer.promptTokens = event.usage.promptTokens;
+        answer.completionTokens = event.usage.completionTokens;
+      } else if (event.type === 'done') {
+        answer.finishReason = event.finishReason;
+      }
+    }
+
+    if (answer.finishReason === 'length') {
+      this.logger.warn(
+        `Answer truncated at AI_ANSWER_MAX_TOKENS=${this.config.env.AI_ANSWER_MAX_TOKENS}.`,
+      );
+    }
+    return answer;
+  }
+
+  /** Emits usage and the cited sources, then persists the answer. */
+  private async *finishAnswer(
+    turn: Turn,
+    answer: Answer,
+    used: RetrievedChunk[],
+    flaggedSources: number,
+  ): AsyncGenerator<StreamEvent> {
+    const { params } = turn;
+    yield {
+      type: 'usage',
+      promptTokens: answer.promptTokens,
+      completionTokens: answer.completionTokens,
+      provider: this.ai.chat.id,
+      model: this.ai.chat.model,
+    };
+
+    // Only what the model actually cited, replacing the candidate list in the UI.
+    const resolved = resolveCitations(answer.text, used);
+    yield {
+      type: 'citations',
+      citations: resolved.map((c) => ({
+        number: c.number,
+        chunkId: c.chunkId,
+        documentId: c.documentId,
+        documentTitle: c.documentTitle,
+        quote: c.quote,
+      })),
+    };
+
+    const grounding = classifyGrounding(answer.text, resolved.length);
+    await this.saveMessage(params.accessToken, {
+      id: turn.messageId,
+      conversationId: turn.conversationId,
+      ownerId: params.userId,
+      role: 'assistant',
+      content: answer.text,
+      provider: this.ai.chat.id,
+      model: this.ai.chat.model,
+      promptTokens: answer.promptTokens,
+      completionTokens: answer.completionTokens,
+      latencyMs: Date.now() - turn.startedAt,
+      citations: resolved,
+      grounding,
+      flaggedSources,
+    });
+    this.logTurn(turn, {
+      grounding,
+      refusedWithoutModel: false,
+      flaggedSources,
+      sources: used.length,
+    });
+    await this.touchConversation(params.accessToken, turn.conversationId);
+    this.recordUsage(turn);
+
+    yield { type: 'done', messageId: turn.messageId };
+  }
+
+  /** The same events a model answer produces, so the client needs no special case. */
+  private async *refuseWithoutModel(turn: Turn): AsyncGenerator<StreamEvent> {
+    const { params } = turn;
+    yield { type: 'sources', sources: [] };
+    yield { type: 'token', delta: NOTHING_RELEVANT };
+    yield {
+      type: 'usage',
+      promptTokens: 0,
+      completionTokens: 0,
+      provider: this.ai.chat.id,
+      model: this.ai.chat.model,
+    };
+    yield { type: 'citations', citations: [] };
+
+    await this.saveMessage(params.accessToken, {
+      id: turn.messageId,
+      conversationId: turn.conversationId,
+      ownerId: params.userId,
+      role: 'assistant',
+      content: NOTHING_RELEVANT,
+      provider: this.ai.chat.id,
+      model: this.ai.chat.model,
+      promptTokens: 0,
+      completionTokens: 0,
+      latencyMs: Date.now() - turn.startedAt,
+      grounding: 'refusal',
+      refusedWithoutModel: true,
+    });
+    this.logTurn(turn, {
+      grounding: 'refusal',
+      refusedWithoutModel: true,
+      flaggedSources: 0,
+      sources: 0,
+    });
+    await this.touchConversation(params.accessToken, turn.conversationId);
+    // The query embedding (and any condense call) was still spent.
+    this.recordUsage(turn);
+
+    yield { type: 'done', messageId: turn.messageId };
+  }
+
+  // --- model calls that must never fail the turn ------------------------------
+
+  private async condense(
+    history: HistoryMessage[],
+    question: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    try {
+      const result = await this.ai.chat.chat({
+        messages: [{ role: 'user', content: buildCondensePrompt(history, question) }],
+        temperature: 0,
+        maxTokens: CONDENSE_MAX_TOKENS,
+        signal,
+      });
+      const condensed = result.text.trim();
+      return acceptCondensed(condensed, isNoAnswer) ? condensed : question;
+    } catch (error) {
+      this.logger.warn(`Condense failed, using raw question: ${(error as Error).message}`);
+      return question;
+    }
+  }
+
   private async hypothesise(question: string, signal?: AbortSignal): Promise<string | null> {
     try {
       const result = await this.ai.chat.chat({
@@ -335,83 +372,25 @@ export class ChatService {
     }
   }
 
-  private async condense(
-    history: { role: 'user' | 'assistant'; content: string }[],
-    question: string,
-    signal?: AbortSignal,
-  ): Promise<string> {
-    try {
-      const result = await this.ai.chat.chat({
-        messages: [{ role: 'user', content: buildCondensePrompt(history, question) }],
-        temperature: 0,
-        maxTokens: CONDENSE_MAX_TOKENS,
-        signal,
-      });
-      const condensed = result.text.trim();
-      // A condense call that returns junk must not replace a usable question.
-      return acceptCondensed(condensed, isNoAnswer) ? condensed : question;
-    } catch (error) {
-      this.logger.warn(`Condense failed, using raw question: ${(error as Error).message}`);
-      return question;
-    }
+  // --- helpers ----------------------------------------------------------------
+
+  /** The configured floor, else the one measured for this embedding model, else none. */
+  private get relevanceFloor(): number {
+    return (
+      this.config.env.RETRIEVAL_MIN_SIMILARITY ??
+      calibratedRelevanceFloor(this.ai.embeddings.model) ??
+      0
+    );
+  }
+
+  /** Fire-and-forget: analytics must never delay or fail an answer. */
+  private recordUsage(turn: Turn): void {
+    void this.usage.record(turn.params.userId, turn.usageEvents.splice(0));
   }
 
   /**
-   * The deterministic refusal: the same events a model answer produces, so
-   * the client needs no special case, with zero tokens spent.
-   */
-  private async *refuseWithoutModel(ctx: {
-    accessToken: string;
-    userId: string;
-    conversationId: string;
-    assistantMessageId: string;
-    startedAt: number;
-    usageEvents: Parameters<UsageService['record']>[1];
-  }): AsyncGenerator<StreamEvent> {
-    yield { type: 'sources', sources: [] };
-    yield { type: 'token', delta: NOTHING_RELEVANT };
-    yield {
-      type: 'usage',
-      promptTokens: 0,
-      completionTokens: 0,
-      provider: this.ai.chat.id,
-      model: this.ai.chat.model,
-    };
-    yield { type: 'citations', citations: [] };
-    await this.saveMessage(ctx.accessToken, {
-      id: ctx.assistantMessageId,
-      conversationId: ctx.conversationId,
-      ownerId: ctx.userId,
-      role: 'assistant',
-      content: NOTHING_RELEVANT,
-      provider: this.ai.chat.id,
-      model: this.ai.chat.model,
-      promptTokens: 0,
-      completionTokens: 0,
-      latencyMs: Date.now() - ctx.startedAt,
-      grounding: 'refusal',
-      refusedWithoutModel: true,
-    });
-    this.logTurn({
-      grounding: 'refusal',
-      refusedWithoutModel: true,
-      flaggedSources: 0,
-      sources: 0,
-      latencyMs: Date.now() - ctx.startedAt,
-    });
-    // A refusal is still the latest turn; without this the conversation sorted
-    // by the time of its last *answer*.
-    await this.touchConversation(ctx.accessToken, ctx.conversationId);
-    // The query embedding (and a condense call, on a follow-up) was still spent.
-    void this.usage.record(ctx.userId, ctx.usageEvents.splice(0));
-    yield { type: 'done', messageId: ctx.assistantMessageId };
-  }
-
-  /**
-   * Observability, not enforcement: a source that reads like an injection is
-   * still given to the model (as data, under rules that say so), because a
-   * document *about* prompt injection is legitimate content. The log line is
-   * what lets an operator see an attempt happening.
+   * Logged, not blocked: a document about prompt injection is legitimate
+   * content, and it reaches the model as data under rules that say so.
    */
   private logInjectionSignals(chunks: RetrievedChunk[]): number {
     let flagged = 0;
@@ -428,19 +407,19 @@ export class ChatService {
     return flagged;
   }
 
-  /**
-   * One structured line per turn: the fields a log pipeline turns into
-   * refusal-rate and grounding dashboards without parsing prose. No question
-   * or answer text -- that is user content, and it stays in the database.
-   */
-  private logTurn(fields: {
-    grounding: Grounding;
-    refusedWithoutModel: boolean;
-    flaggedSources: number;
-    sources: number;
-    latencyMs: number;
-  }): void {
-    this.logger.log(`chat_turn ${JSON.stringify(fields)}`);
+  /** One structured line per turn for dashboards. No user text. */
+  private logTurn(
+    turn: Turn,
+    fields: {
+      grounding: Grounding;
+      refusedWithoutModel: boolean;
+      flaggedSources: number;
+      sources: number;
+    },
+  ): void {
+    this.logger.log(
+      `chat_turn ${JSON.stringify({ ...fields, latencyMs: Date.now() - turn.startedAt })}`,
+    );
   }
 
   private toCitations(chunks: RetrievedChunk[]): Citation[] {
@@ -453,40 +432,35 @@ export class ChatService {
     }));
   }
 
-  private async ensureConversation(
-    accessToken: string,
-    ownerId: string,
-    conversationId: string | undefined,
-    question: string,
-  ): Promise<string> {
-    const db = this.supabase.forUser(accessToken);
-    if (conversationId) {
+  // --- persistence ------------------------------------------------------------
+
+  private async ensureConversation(params: AskParams): Promise<string> {
+    const db = this.supabase.forUser(params.accessToken);
+    if (params.conversationId) {
       const { data } = await db
         .from('conversations')
         .select('id')
-        .eq('id', conversationId)
+        .eq('id', params.conversationId)
         .maybeSingle();
-      if (data) return conversationId;
+      if (data) return params.conversationId;
     }
 
+    const { question } = params;
     const title = question.length > 60 ? `${question.slice(0, 57)}...` : question;
     const { data, error } = await db
       .from('conversations')
-      .insert({ owner_id: ownerId, title })
+      .insert({ owner_id: params.userId, title })
       .select('id')
       .single();
     if (error) throw new Error(`Failed to create conversation: ${error.message}`);
     return (data as { id: string }).id;
   }
 
+  /** The newest HISTORY_TURNS messages, returned oldest first. */
   private async loadHistory(
     accessToken: string,
     conversationId: string,
-  ): Promise<{ role: 'user' | 'assistant'; content: string }[]> {
-    // Newest first, then reversed back into chronological order. Ordering
-    // ascending with a limit takes the *oldest* ten messages, which freezes the
-    // context at the start of the conversation: past turn ten the model and the
-    // condenser never see anything recent.
+  ): Promise<HistoryMessage[]> {
     const { data } = await this.supabase
       .forUser(accessToken)
       .from('messages')
@@ -495,8 +469,15 @@ export class ChatService {
       .order('created_at', { ascending: false })
       .limit(HISTORY_TURNS);
 
-    const rows = (data ?? []) as { role: 'user' | 'assistant'; content: string }[];
-    return rows.reverse();
+    return ((data ?? []) as HistoryMessage[]).reverse();
+  }
+
+  private async touchConversation(accessToken: string, conversationId: string): Promise<void> {
+    await this.supabase
+      .forUser(accessToken)
+      .from('conversations')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', conversationId);
   }
 
   private async saveMessage(
@@ -552,10 +533,7 @@ export class ChatService {
           quote: c.quote,
         })),
       );
-      // Checked deliberately: an unchecked insert here failed silently under
-      // RLS and every answer was stored with zero citations. Logged rather than
-      // thrown -- the answer has already been streamed, and losing its
-      // citations should not fail the request retroactively.
+      // Logged, not thrown: the answer has already streamed.
       if (citationError) {
         this.logger.error(`Failed to persist citations: ${citationError.message}`);
       }
