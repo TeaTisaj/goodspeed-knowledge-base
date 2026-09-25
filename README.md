@@ -217,7 +217,9 @@ Five findings, all from live suites failing on their first run — none from cod
   budget before any visible content. At `max_tokens: 64` the call returns `content: ""` with
   `finish_reason: "length"` — a blank answer, no error, nothing logged. The contract's own probe was
   set to 64, so it was measuring the budget rather than the provider. It now budgets 512 and names
-  this case explicitly when text comes back empty on a `length` finish.
+  this case explicitly when text comes back empty on a `length` finish. The application's own
+  budgets had the same flaw — the condense step capped at 120 tokens, the reranker at 50, the answer
+  not at all — and the generation eval is what surfaced it (DECISIONS.md D36).
 - **Gemini reports streamed usage**, and its preset said `false` because the capability was
   undocumented, so the row assumed absence. Streamed Gemini answers were being recorded as zero
   tokens.
@@ -257,14 +259,16 @@ pnpm test:integration  # against local Supabase
 pnpm test:e2e          # browser, starts the stack itself
 pnpm test:live         # AI providers, against the real endpoints
 pnpm eval              # retrieval quality, offline
+pnpm eval:generation   # answers, refusals, prompt-injection resistance (see below)
 ```
 
-| Layer       | What it covers                                                                                                                                                 |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit        | Chunking, rank fusion, hash diffing, citation resolution, retry/backoff, provider contract, vendor error shapes, usage scoping, context budget, history window |
-| Integration | **RLS isolation**, incremental re-ingestion, hybrid retrieval behaviour                                                                                        |
-| E2E         | Sign up → create → ingest → ask → cited answer; upload → usage; signed-out redirect                                                                            |
-| Live AI     | Every preset's base URL and auth-error mapping, keyless; full contract against any provider with a key                                                         |
+| Layer       | What it covers                                                                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit        | Chunking, rank fusion, hash diffing, citation resolution, retry/backoff, provider contract, vendor error shapes, usage scoping, context budget, history window             |
+| Security    | Prompt channel separation, delimiter forgery, invisible-Unicode stripping, the relevance floor, the no-model refusal path, markdown output never rendering links or images |
+| Integration | **RLS isolation**, incremental re-ingestion, hybrid retrieval behaviour                                                                                                    |
+| E2E         | Sign up → create → ingest → ask → cited answer; upload → usage; signed-out redirect                                                                                        |
+| Live AI     | Every preset's base URL and auth-error mapping, keyless; full contract against any provider with a key                                                                     |
 
 ### Live provider tests
 
@@ -326,20 +330,71 @@ see [DECISIONS.md](DECISIONS.md) D25 and D26.
 
 `pnpm eval` measures retrieval on a fixture corpus, scored **chunk-level**: a hit requires the
 returned chunk to actually contain the answer span, because retrieving the right document but the
-wrong chunk still produces an unanswerable prompt.
+wrong chunk still produces an unanswerable prompt. With a real embedding model
+(`--embed=openrouter:openai/text-embedding-3-small`):
 
-| config           | hit@1 | hit@5 | MRR   |
-| ---------------- | ----- | ----- | ----- |
-| semantic only    | 94%   | 94%   | 0.944 |
-| keyword only     | 91%   | 94%   | 0.929 |
-| **hybrid (RRF)** | 94%   | 94%   | 0.944 |
+| config           | hit@1   | hit@5    | MRR       |
+| ---------------- | ------- | -------- | --------- |
+| semantic only    | 83%     | 100%     | 0.889     |
+| keyword only     | 91%     | 94%      | 0.929     |
+| **hybrid (RRF)** | **91%** | **100%** | **0.945** |
 
-Full numbers, ablations and **the caveats that matter** are in
-**[eval/RESULTS.md](eval/RESULTS.md)**. The most useful thing in there is not a number: an earlier
-run of this same table ranked keyword search _above_ hybrid, and a chunking fix unrelated to
-retrieval mode was enough to flip it. That is recorded rather than overwritten, because it is the
-evidence that a 35-question corpus cannot separate these three configurations — and the default
-embedder is lexical, so the comparison does not yet test what its name suggests.
+With real semantics the two arms fail on different questions, and fusion takes the better of each.
+Full numbers, ablations, the **relevance-floor calibration** and **the caveats that matter** are in
+**[eval/RESULTS.md](eval/RESULTS.md)** — including an earlier run where keyword search ranked
+_above_ hybrid and a chunking fix flipped it, which is recorded rather than overwritten because it
+is the evidence that a 35-question corpus separates these configurations by noise. CI runs the same
+harness offline with the fake embedder and gates on it.
+
+### Answer quality and safety
+
+`pnpm eval:generation` runs 54 labelled cases through **the production code path** — the same
+relevance floor, condense guard and `buildChatMessages` the API calls — against a real model, in
+nine categories: answerable, paraphrase, multi-hop, partial, follow-up, near-miss (the topic is in
+the corpus, the fact is not), out-of-scope, direct injection, and indirect injection from seven
+**poisoned documents** (instruction override, phishing link, delimiter forgery, invisible-Unicode
+smuggling, role reassignment, image exfiltration, prompt extraction).
+
+Scoring is **deterministic first**: each case states what the answer must and must not contain and
+whether it must refuse, and that is what the gate uses. An **LLM judge** from a different model
+family adds claim-level faithfulness and correctness, and is **calibrated on hand-labelled answers**
+— including a changed number and an answer that tries to grade itself — before its scores count.
+
+| model (Groq) | overall | attack success | refusals | utility under attack | judge faithfulness |
+| ------------ | ------- | -------------- | -------- | -------------------- | ------------------ |
+| gpt-oss-120b | 96%     | **0%**         | 93%      | 100%                 | 93.7% of claims    |
+| gpt-oss-20b  | 96%     | **0%**         | 93%      | 100%                 | —                  |
+
+Both remaining failures are instructive rather than embarrassing: one is a retrieval miss (the
+answer chunk ranks 30th, and the model correctly refuses what it was not shown), and one is the
+near-miss the category exists for — "the most a manager can approve" is not in the documents, and
+both models extrapolated it from a threshold.
+
+Per-case answers, the failures and what they taught are in **[eval/GENERATION.md](eval/GENERATION.md)**.
+
+---
+
+## Security
+
+The threat model, in one paragraph: retrieval is RLS-scoped, so a prompt only ever holds the asking
+user's own documents — there is no cross-user path. What remains is **indirect prompt injection**:
+a user uploads a PDF or pastes a page they did not write, and a sentence in it tries to steer the
+answer they trust. And **scope escape**: talking the assistant into being a general-purpose chatbot.
+
+| layer       | what it does                                                                                                                                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Isolation   | RLS on every table; search functions are `SECURITY INVOKER`; no `owner_id` filter in application code to forget. Integration-tested against real Postgres.                                                 |
+| Structure   | The system message holds only rules. Sources go in the user turn inside tags a document cannot forge; invisible Unicode (tag-character smuggling, zero-width, bidi) is stripped.                           |
+| Policy      | Tagged content is data, never instructions; nothing in it can change the rules; links and images are never output; out-of-scope gets one fixed refusal sentence.                                           |
+| Relevance   | When nothing retrieved clears a similarity floor measured for the embedding model, the API refuses **without calling the model** — nothing to jailbreak.                                                   |
+| Output      | The renderer supports no links or images (an image is fetched on render — the classic exfiltration channel); citations resolve server-side; an answer that neither cites nor refuses is flagged in the UI. |
+| Cost        | Per-user rate limits; every answer has a completion-token ceiling; request bodies are bounded to the contract.                                                                                             |
+| Visibility  | Every answer records its grounding class, whether it was refused without a model call, and how many sources looked like injections; the usage page shows the rates.                                        |
+| Measurement | The poisoned-corpus eval above. A defence that has not been attacked is an assumption.                                                                                                                     |
+
+Deliberately **not** built: a classifier that blocks documents or questions that "look like"
+injections. It is easy to evade and would refuse a security runbook that merely discusses the topic.
+Heuristic matches are logged instead. Reasoning in [DECISIONS.md](DECISIONS.md) D33–D36.
 
 ---
 
@@ -362,6 +417,12 @@ Full reasoning in **[DECISIONS.md](DECISIONS.md)**. The ones worth knowing up fr
 - **Capabilities are load-bearing, not decorative.** The prompt budget is `min(env, provider
 window)`, so swapping a 400k model for an 8k one moves it without touching config; and the API
   refuses to boot if `AI_EMBEDDING_DIMENSIONS` disagrees with the actual `vector(N)` column.
+- **Retrieved text is data, not instructions.** Documents travel in the user turn inside tags they
+  cannot forge, never in the system message — an earlier version put them there, which gave every
+  sentence of every uploaded PDF operator authority.
+- **Out-of-scope questions are refused before the model sees them**, using a similarity floor
+  measured per embedding model. The first calibration was wrong — it would have cut real answers —
+  and the generation eval is what caught it.
 - **Usage is request-scoped** via `AsyncLocalStorage`. A shared buffer drained per request
   misattributes tokens between concurrent users, which is not acceptable for billing-adjacent
   numbers.
@@ -370,17 +431,24 @@ window)`, so swapping a 400k model for an 8k one moves it without touching confi
 
 ## What I would do next
 
-- **Re-run the eval against a real embedding model and a larger corpus.** The current fixture is
-  8 documents; differences of one or two questions are noise, and the semantic-vs-keyword comparison
-  is meaningless while the default embedder is lexical. This is the single most valuable next step,
-  because it is what would justify changing the chunk size or turning the reranker on. It is also
-  no longer a hypothetical worry: a chunking fix flipped which retrieval mode "won" on this corpus,
-  which is what noise looks like when you can see it.
+- **A larger, messier eval corpus.** Retrieval now runs against a real embedding model, and
+  generation is measured end to end, but both fixtures are small and written alongside the corpus:
+  54 generation cases and 35 retrieval questions separate configurations by one or two cases. Real
+  user questions — typos, ambiguity, multi-document — are the next measurement worth having.
+- **Paraphrase recall.** Four levers were measured (eval/retrieval-experiments.mjs); hypothetical-
+  document expansion was the only one that helped without costing a plain question, and it ships as
+  an opt-in (`RETRIEVAL_HYDE`) because the evidence is one question in four and the cost is a model
+  call per question. A larger paraphrase set is what would justify turning it on — and the one
+  question no lever rescues (its answer chunk ranks 30th, diluted by filler) needs better chunking.
 - **Reranking on by default**, if the eval justifies the extra call. The harness already measures
   with and without it.
 - **OCR for scanned PDFs.** Upload currently detects them and says so rather than creating an empty
   document, which is the right failure but not a solution.
-- **Observability**: retrieval hit rate and answer latency as real metrics, not logs.
+- **Observability**: retrieval hit rate, refusal rate, grounding and injection-heuristic hits as
+  real metrics, not log lines — the eval measures them offline; production should too.
+- **A second opinion on injections**: Groq serves Llama Prompt Guard, a small classifier built for
+  this. As a logged signal alongside the heuristics it would be cheap; as a blocker it would inherit
+  every false positive a classifier has, which is why it is not one here.
 - **Transactional ingestion end to end.** Re-indexing is now atomic, but delete → reindex → insert
   are still three statements; a crash between them can leave a document briefly partial. The fix is
   one RPC for the whole rebuild, and the reason it is not done yet is that it trades readable

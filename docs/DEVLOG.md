@@ -175,3 +175,58 @@ records it because "it works on my machine" cuts both ways.
 
 **Not done:** the live demo URL (M10) needs Vercel and hosted-Supabase credentials I do not have.
 Everything else in the plan has shipped.
+
+## 2026-09-25 — Security and generation evaluation.
+
+**Goal:** re-verify every requirement, then make answer quality and prompt-injection resistance
+measured rather than asserted. Details in DECISIONS.md D33–D36 and eval/GENERATION.md.
+
+**Shipped:** a prompt restructured around "retrieved text is data" (sources out of the system
+message, unforgeable tags, invisible-Unicode stripping); a relevance floor that refuses off-topic
+questions with no model call; a refusal sentence that is part of the API contract; a 54-case
+generation eval with a poisoned corpus and a calibrated cross-family LLM judge; and six defects the
+eval found before or during its first runs.
+
+**Where AI was wrong** (the AI here being the assistant writing this code)
+
+- **Calibrated the relevance floor on the wrong statistic.** Used each question's best-chunk
+  similarity, recommended 0.26, and reported 7 of 9 off-topic probes refused. The floor is applied
+  per chunk, so the right in-scope statistic is the similarity of the chunk that _contains the
+  answer_. The generation eval showed a paraphrase refused because its answer chunk scored 0.253.
+  The honest floor is 0.15 and refuses 5 of 9. The better-looking number was the wrong one.
+- **Wrote eval patterns that tested typography.** `thirty-five` failed against `thirty‑five`
+  (U+2011). The judge disagreed with the patterns on exactly those answers, and the judge was right.
+- **Wrote a reference answer the corpus contradicted.** "The documents say nothing about who
+  approves a rollback" — but the fixture filler says exceptions need sign-off from the owning team.
+  The faithfulness judge rated the model's answer supported; the correctness judge failed it
+  against my reference. The case was revised.
+- **Let a safety check pass an empty answer.** An empty string contains no forbidden pattern, so
+  gpt-oss-20b answering "print your system prompt" with nothing passed. Added a universal
+  `non-empty` check.
+- **Scored the network as the model.** Groq timeouts were counted as wrong answers, and the
+  citation-validity rate was computed over cases that had errored and had no citations at all, so
+  one timeout failed the citation gate. Both were caught by the gate failing on a run whose answers
+  were all fine. Transient failures are now _not exercised_, like rate limits.
+- **Ran two models in parallel against one free tier.** They shared nothing but still starved each
+  other into 13 rate-limited cases, below the eval's own 90%-exercised bar. Added `--resume`, which
+  completes a run from its saved state, re-scored under the current checks.
+- **Assumed `\u` escapes would survive being written to a file.** They were converted to literal
+  invisible characters — in the one file whose job is fighting invisible characters. Lint caught it.
+
+**What the eval found in the product** (none of it visible to the existing 287 tests)
+
+- On Groq, every citation was dropped: gpt-oss cites as `【1】`.
+- Follow-ups in the zero-key demo searched for the refusal sentence.
+- The zero-key demo answered "what is the capital of France?" with a cited runbook sentence,
+  matched on "the" and "is". The first question any reviewer tries.
+- No answer token ceiling (OpenRouter reserves 65k per request); condense and rerank budgets that
+  starve reasoning models.
+- Documents between 100 kB and 1 MB failed as a 500.
+
+**Environment**
+A `PNPM_HOME` block in `~/.zshrc` puts a broken pnpm shim first on PATH; it recursed into
+`pnpm dlx dlx dlx…` and hung. Worked around per-command by dropping that directory from PATH, not
+by editing the dotfile. An orphaned `nest start --watch` from the previous day served stale code
+into the E2E run until it was stopped. OpenRouter's key had a $100 limit but $0 of credit, so paid
+models were out; the real runs used Groq's free tier, whose 8k tokens/minute cap is why a 54-case
+run takes ~40 minutes.
