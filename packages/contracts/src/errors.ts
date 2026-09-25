@@ -12,6 +12,7 @@ export const errorCodeSchema = z.enum([
   'forbidden',
   'not_found',
   'conflict',
+  'payload_too_large',
   'rate_limited',
   'provider_unavailable',
   'provider_timeout',

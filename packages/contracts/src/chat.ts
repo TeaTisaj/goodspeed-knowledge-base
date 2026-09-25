@@ -77,3 +77,45 @@ export const streamEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('error'), code: z.string(), message: z.string() }),
 ]);
 export type StreamEvent = z.infer<typeof streamEventSchema>;
+
+/**
+ * The one sentence every refusal starts with.
+ *
+ * Part of the contract rather than a prompt detail because three parties read
+ * it: the model is told to open with it, the API emits it verbatim when
+ * retrieval finds nothing relevant (no model call at all), and the UI and the
+ * eval harness recognise it. A refusal only a human can recognise cannot be
+ * measured, and a refusal the UI cannot tell apart from an answer is shown with
+ * the same confidence as one.
+ */
+export const NO_ANSWER = "I couldn't find that in your documents.";
+
+/**
+ * True when an answer is a refusal.
+ *
+ * Tolerant of the two ways models reproduce a fixed sentence imperfectly -- a
+ * typographic apostrophe and surrounding markdown emphasis -- and of a short
+ * lead-in, but not of the sentence appearing late in a long answer, which is a
+ * partial answer rather than a refusal.
+ */
+export function isNoAnswer(text: string): boolean {
+  const normalised = text.replace(/[‘’]/g, "'").replace(/[*_]/g, '').trim().toLowerCase();
+  const at = normalised.indexOf(NO_ANSWER.toLowerCase().slice(0, -1));
+  return at !== -1 && at <= 20;
+}
+
+/**
+ * How an answer relates to the sources, derived from content and citations
+ * alone so a reloaded conversation classifies exactly as the live one did.
+ *
+ *  - `grounded`: cites at least one source that was actually provided.
+ *  - `refusal`:  says the documents do not cover it.
+ *  - `ungrounded`: neither -- a claim with nothing behind it. The UI flags
+ *    these; the eval counts them as failures.
+ */
+export type Grounding = 'grounded' | 'refusal' | 'ungrounded';
+
+export function classifyGrounding(answer: string, citationCount: number): Grounding {
+  if (isNoAnswer(answer)) return 'refusal';
+  return citationCount > 0 ? 'grounded' : 'ungrounded';
+}

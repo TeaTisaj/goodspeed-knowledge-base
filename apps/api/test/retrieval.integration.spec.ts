@@ -88,6 +88,7 @@ describe('retrieval', () => {
       score: number;
       semantic_rank: number | null;
       full_text_rank: number | null;
+      similarity: number | null;
     }[];
   }
 
@@ -156,6 +157,37 @@ describe('retrieval', () => {
     // Vector search always returns its nearest neighbours, so this asserts the
     // query succeeds rather than that it returns nothing.
     expect(Array.isArray(rows)).toBe(true);
+  });
+
+  it('returns absolute similarity for every row, including keyword-only ones', async () => {
+    // The fused score is rank-based and cannot say whether anything is
+    // relevant; the relevance floor reads this column instead.
+    const rows = await search('rollback deploy Actions tab eight minutes');
+    for (const r of rows) {
+      expect(typeof r.similarity).toBe('number');
+      expect(r.similarity).toBeGreaterThanOrEqual(-1);
+      expect(r.similarity).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('gives the matching chunk higher similarity than an unrelated one', async () => {
+    const rows = await search('roll back a bad deploy from the Actions tab');
+    const runbook = rows.find((r) => /roll back/i.test(r.content));
+    const revenue = rows.find((r) => /revenue/i.test(r.content));
+    expect(runbook?.similarity).toBeGreaterThan(revenue?.similarity ?? -1);
+  });
+
+  it('agrees with semantic_search on similarity for the same chunk', async () => {
+    const q = 'roll back a bad deploy';
+    const { embeddings } = await embedder.embed({ texts: [q] });
+    const { data } = await userClient(user.accessToken).rpc('semantic_search', {
+      query_embedding: JSON.stringify(embeddings[0]),
+      match_count: 1,
+      required_embedding_model: embedder.model,
+    });
+    const top = (data as { content: string; similarity: number }[])[0]!;
+    const hybrid = (await search(q)).find((r) => r.content === top.content);
+    expect(hybrid?.similarity).toBeCloseTo(top.similarity, 6);
   });
 
   it('survives punctuation that would break a raw tsquery', async () => {

@@ -1,7 +1,12 @@
 export * from './types.js';
 export * from './presets.js';
 export * from './factory.js';
-export { FakeChatProvider, FakeEmbeddingProvider, hashingVector } from './providers/fake.js';
+export {
+  FAKE_NO_ANSWER,
+  FakeChatProvider,
+  FakeEmbeddingProvider,
+  hashingVector,
+} from './providers/fake.js';
 export {
   OpenAICompatibleChatProvider,
   OpenAICompatibleEmbeddingProvider,

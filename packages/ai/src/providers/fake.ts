@@ -78,6 +78,23 @@ export function hashingVector(text: string, dims: number): number[] {
   return v.map((x) => x / norm);
 }
 
+/**
+ * Words that carry no topic. The extractive answer matches on content words
+ * only: matching on "what", "is" and "the" made the zero-key demo answer "what
+ * is the capital of France?" with a confidently cited runbook sentence --
+ * precisely the first question a reviewer tries.
+ */
+const STOPWORDS = new Set(
+  (
+    'a an and are as at be by can could did do does for from had has have how i if in into is it ' +
+    'its me my no not of on or our so than that the their them then there these they this to was ' +
+    'we were what when where which who why will with would you your about after before should ' +
+    'many much any all been being get got just like more most some such tell us very'
+  ).split(' '),
+);
+
+const contentTerms = (text: string) => tokenize(text).filter((t) => !STOPWORDS.has(t));
+
 interface ParsedSource {
   number: number;
   title: string;
@@ -85,24 +102,33 @@ interface ParsedSource {
 }
 
 /**
- * Extracts the numbered source blocks from a built prompt.
+ * The refusal sentence the application contract defines (`NO_ANSWER` in
+ * @kb/contracts). Restated rather than imported because the AI layer must not
+ * depend on the application's contracts; apps/api has a test pinning the two
+ * together, so they cannot drift silently.
+ */
+export const FAKE_NO_ANSWER = "I couldn't find that in your documents.";
+
+/**
+ * Extracts the `<source id="n" title="...">` blocks from a built prompt.
  *
  * Kept tolerant on purpose: if the prompt format changes and nothing matches,
- * the caller returns a "no answer" response rather than quietly falling back to
- * quoting the instructions.
+ * the caller returns a refusal rather than quietly falling back to quoting the
+ * instructions.
  */
-function parseSources(system: string): ParsedSource[] {
-  const marker = system.indexOf('Sources:');
-  if (marker === -1) return [];
-
-  const body = system.slice(marker + 'Sources:'.length);
+function parseSources(text: string): ParsedSource[] {
   const out: ParsedSource[] = [];
-  const pattern = /\[(\d{1,2})\]\s*([^\n]*)\n([\s\S]*?)(?=\n\[\d{1,2}\]\s|$)/g;
-
-  for (const m of body.matchAll(pattern)) {
+  const pattern = /<source id="(\d{1,2})" title="([^"]*)">\n?([\s\S]*?)\n?<\/source>/g;
+  for (const m of text.matchAll(pattern)) {
     out.push({ number: Number(m[1]), title: (m[2] ?? '').trim(), body: (m[3] ?? '').trim() });
   }
   return out;
+}
+
+/** The question from a `<question>` block, or the whole message when there is none. */
+function parseQuestion(text: string): string {
+  const m = /<question>\n?([\s\S]*?)\n?<\/question>/.exec(text);
+  return (m?.[1] ?? text).trim();
 }
 
 export interface FakeChatOptions {
@@ -165,22 +191,28 @@ export class FakeChatProvider implements ChatProvider {
    *
    * Two details matter for the zero-key demo to be honest:
    *
-   *  - Only the numbered source blocks are searched, never the instruction
+   *  - Only the `<source>` blocks are searched, never the instruction
    *    preamble. Otherwise the "answer" is the system prompt read back, which
    *    looks broken and tells a reviewer nothing.
    *  - It emits real `[n]` citation markers, so the citation resolution and the
    *    clickable-source UI are exercised without any API key.
    */
   private compose(request: ChatRequest): string {
-    const question = [...request.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-    const system = request.messages.find((m) => m.role === 'system')?.content ?? '';
+    const last = [...request.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
-    const sources = parseSources(system);
-    const queryTerms = new Set(tokenize(question));
+    // A condense request. An extractive fake cannot rewrite a question, so the
+    // honest output is the follow-up unchanged. Answering it like a question
+    // returned the refusal sentence, which the chat workflow then used as the
+    // search query -- every follow-up in the zero-key demo retrieved with
+    // "I could not find anything in your documents".
+    const followUp = /<follow_up>\n?([\s\S]*?)\n?<\/follow_up>/.exec(last);
+    if (followUp) return (followUp[1] ?? '').trim();
 
-    if (queryTerms.size === 0 || sources.length === 0) {
-      return 'I could not find anything in your documents that answers that.';
-    }
+    const question = parseQuestion(last);
+    const sources = parseSources(last);
+    const queryTerms = new Set(contentTerms(question));
+
+    if (queryTerms.size === 0 || sources.length === 0) return FAKE_NO_ANSWER;
 
     const scored: { sentence: string; source: number; score: number }[] = [];
     for (const source of sources) {
@@ -205,9 +237,7 @@ export class FakeChatProvider implements ChatProvider {
       }
     }
 
-    if (scored.length === 0) {
-      return 'The sources provided do not contain an answer to that question.';
-    }
+    if (scored.length === 0) return FAKE_NO_ANSWER;
 
     scored.sort((a, b) => b.score - a.score);
     return scored

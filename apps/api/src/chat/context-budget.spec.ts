@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, countTokens, type RetrievedChunk } from '@kb/rag';
+import {
+  buildChatMessages,
+  buildPrompt,
+  countTokens,
+  SYSTEM_PROMPT,
+  type RetrievedChunk,
+} from '@kb/rag';
 
 /**
  * Guards the context budget against the two ways it used to be wrong.
@@ -45,16 +51,20 @@ describe('context ceiling', () => {
 
 describe('buildPrompt token budget', () => {
   const chunks = [chunk('a', 200), chunk('b', 200), chunk('c', 200)];
+  // Budgets are "the rules plus N tokens of room", never absolute: the system
+  // prompt is a real and growing share of the window, and an absolute number
+  // silently stops testing anything the next time the rules are reworded.
+  const overhead = countTokens(SYSTEM_PROMPT);
 
   it('fits every source when there is room', () => {
-    const { used } = buildPrompt(chunks, { maxContextTokens: 4000, countTokens });
+    const { used } = buildPrompt(chunks, { maxContextTokens: overhead + 4000, countTokens });
     expect(used).toHaveLength(3);
   });
 
   it('reserves room for history instead of letting it overflow the window', () => {
-    const generous = buildPrompt(chunks, { maxContextTokens: 700, countTokens });
+    const generous = buildPrompt(chunks, { maxContextTokens: overhead + 700, countTokens });
     const reserved = buildPrompt(chunks, {
-      maxContextTokens: 700,
+      maxContextTokens: overhead + 700,
       reservedTokens: 400,
       countTokens,
     });
@@ -64,26 +74,31 @@ describe('buildPrompt token budget', () => {
   });
 
   it('keeps the whole request inside the ceiling once history is counted', () => {
-    const ceiling = 800;
-    const historyTokens = 300;
+    const ceiling = overhead + 800;
+    const history = [
+      { role: 'user' as const, content: 'word '.repeat(150) },
+      { role: 'assistant' as const, content: 'word '.repeat(150) },
+    ];
 
-    const { system } = buildPrompt(chunks, {
-      maxContextTokens: ceiling,
-      reservedTokens: historyTokens,
-      countTokens,
-    });
+    // Measured on the messages actually sent, so the tag scaffolding around
+    // the sources and the question is counted too.
+    const { messages } = buildChatMessages(
+      { chunks, history, question: 'What changed?' },
+      { maxContextTokens: ceiling, countTokens },
+    );
+    const total = messages.reduce((n, m) => n + countTokens(m.content), 0);
 
-    expect(countTokens(system) + historyTokens).toBeLessThanOrEqual(ceiling);
+    expect(total).toBeLessThanOrEqual(ceiling);
   });
 
   it('still returns a usable prompt when nothing fits', () => {
-    const { system, used } = buildPrompt(chunks, {
-      maxContextTokens: 200,
+    const { context, used } = buildPrompt(chunks, {
+      maxContextTokens: overhead + 200,
       reservedTokens: 190,
       countTokens,
     });
 
     expect(used).toHaveLength(0);
-    expect(system).toContain('(none found)');
+    expect(context).toContain('no sources matched');
   });
 });

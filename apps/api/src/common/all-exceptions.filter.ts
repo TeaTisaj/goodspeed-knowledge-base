@@ -96,6 +96,30 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
     }
 
+    // Errors raised by Express middleware before Nest sees the request --
+    // body-parser's "request entity too large", for one -- are `http-errors`
+    // objects, not HttpExceptions. They carry a client status and `expose`,
+    // meaning the message is safe to show. Treating them as unhandled turned a
+    // too-large document into a 500.
+    const httpError = exception as { status?: unknown; expose?: unknown; message?: unknown };
+    if (
+      typeof httpError?.status === 'number' &&
+      httpError.status >= 400 &&
+      httpError.status < 500 &&
+      httpError.expose === true
+    ) {
+      const code = statusToCode(httpError.status);
+      return {
+        type: `https://goodspeed.kb/errors/${code}`,
+        title:
+          httpError.status === HttpStatus.PAYLOAD_TOO_LARGE
+            ? 'Request is too large'
+            : String(httpError.message ?? 'Bad request'),
+        status: httpError.status,
+        code,
+      };
+    }
+
     this.logger.error(`Unhandled: ${(exception as Error)?.message}`, (exception as Error)?.stack);
     return {
       type: 'https://goodspeed.kb/errors/internal_error',
@@ -131,9 +155,13 @@ function statusToCode(status: number): ErrorCode {
       return 'not_found';
     case HttpStatus.CONFLICT:
       return 'conflict';
+    case HttpStatus.PAYLOAD_TOO_LARGE:
+      return 'payload_too_large';
     case HttpStatus.TOO_MANY_REQUESTS:
       return 'rate_limited';
     case HttpStatus.BAD_REQUEST:
+    case HttpStatus.UNPROCESSABLE_ENTITY:
+    case HttpStatus.UNSUPPORTED_MEDIA_TYPE:
       return 'validation_failed';
     default:
       return 'internal_error';

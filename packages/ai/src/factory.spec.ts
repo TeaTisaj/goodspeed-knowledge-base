@@ -123,13 +123,14 @@ describe('provider composition', () => {
     const chat = buildChatProvider({ provider: 'fake' });
     const res = await chat.chat({
       messages: [
+        { role: 'system', content: 'Answer using only the numbered sources.' },
         {
-          role: 'system',
+          role: 'user',
           content:
-            'Answer using only the numbered sources.\n\nSources:\n\n' +
-            '[1] Deploy runbook\nA deploy takes eight minutes end to end from merge to live.',
+            '<sources>\n<source id="1" title="Deploy runbook">\n' +
+            'A deploy takes eight minutes end to end from merge to live.\n</source>\n</sources>' +
+            '\n\n<question>\nhow long does a deploy take\n</question>',
         },
-        { role: 'user', content: 'how long does a deploy take' },
       ],
     });
     expect(res.text).toMatch(/eight minutes/);

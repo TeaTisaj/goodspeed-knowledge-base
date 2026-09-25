@@ -1,6 +1,12 @@
 'use client';
 
-import type { Citation, Conversation, StreamEvent } from '@kb/contracts';
+import {
+  classifyGrounding,
+  type Citation,
+  type Conversation,
+  type Grounding,
+  type StreamEvent,
+} from '@kb/contracts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api, streamAsk } from '@/lib/api';
 import { Button, EmptyState, ErrorBanner, Spinner } from '@/components/ui';
@@ -15,6 +21,16 @@ interface Turn {
   /** True while showing retrieval candidates rather than what was cited. */
   sourcesOnly?: boolean;
   streaming?: boolean;
+}
+
+/**
+ * How much the reader should trust a finished answer, derived from the stored
+ * content and citations alone -- so a reloaded conversation shows exactly what
+ * the live one did. Null while streaming or before the final citations arrive.
+ */
+function groundingOf(turn: Turn): Grounding | null {
+  if (turn.role !== 'assistant' || turn.streaming || turn.sourcesOnly || !turn.content) return null;
+  return classifyGrounding(turn.content, turn.citations.length);
 }
 
 const STAGE_LABEL: Record<string, string> = {
@@ -195,7 +211,9 @@ export default function ChatPage() {
                   className={`rounded-md px-3 py-2 text-sm leading-relaxed ${
                     turn.role === 'user'
                       ? 'whitespace-pre-wrap bg-[var(--color-surface-muted)]'
-                      : 'border'
+                      : groundingOf(turn) === 'refusal'
+                        ? 'border border-dashed text-[var(--color-ink-muted)]'
+                        : 'border'
                   }`}
                 >
                   {/* The question is shown verbatim; only the answer is
@@ -211,6 +229,15 @@ export default function ChatPage() {
                     <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-current align-text-bottom" />
                   )}
                 </div>
+
+                {/* A confident answer with nothing behind it is the failure a
+                    RAG UI most needs to surface, because it looks exactly like
+                    a good one. */}
+                {groundingOf(turn) === 'ungrounded' && (
+                  <p className="text-xs text-[var(--color-warning)]" role="note">
+                    This answer cites none of your documents. Check it before relying on it.
+                  </p>
+                )}
 
                 {turn.role === 'assistant' && turn.citations.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5">

@@ -79,13 +79,12 @@ export class ChatController {
         if (res.writableEnded) break;
         send(event);
       }
-    } catch (error) {
+    } catch {
+      // The raw message is not forwarded: it can carry a provider response
+      // body or a database error, neither of which the browser should see.
+      // ChatService logs the detail before this point.
       if (!res.writableEnded) {
-        send({
-          type: 'error',
-          code: 'internal_error',
-          message: (error as Error).message ?? 'Stream failed',
-        });
+        send({ type: 'error', code: 'internal_error', message: 'Stream failed.' });
       }
     } finally {
       if (!res.writableEnded) res.end();

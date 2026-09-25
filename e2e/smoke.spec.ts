@@ -1,3 +1,4 @@
+import { NO_ANSWER } from '@kb/contracts';
 import { expect, test } from '@playwright/test';
 
 const EMAIL = `e2e-${Date.now()}@example.test`;
@@ -69,8 +70,10 @@ test('sign up, create a document, ingest it, and get a cited answer', async ({ p
     timeout: 45_000,
   });
 
-  // The answer must be grounded in the document, not a generic refusal.
-  await expect(assistantTurn).not.toContainText(/could not find|do not contain/i);
+  // The answer must be grounded in the document, not the refusal. Pinned to the
+  // contract constant: a hand-written regex here stopped matching the day the
+  // refusal wording changed, and would have gone on passing forever.
+  await expect(assistantTurn).not.toContainText(NO_ANSWER);
 
   // --- citations are clickable and show the supporting text ---------------
   const citation = page.getByRole('button', { name: /^\[\d+\]/ }).first();
@@ -84,6 +87,18 @@ test('sign up, create a document, ingest it, and get a cited answer', async ({ p
   // The citation links back to the document that supported the claim.
   await expect(dialog.getByRole('link', { name: /open document/i })).toBeVisible();
   await dialog.getByRole('button', { name: /close/i }).click();
+
+  // --- an off-topic follow-up is refused, not answered --------------------
+  // The first question any reviewer tries. In the zero-key stack this goes
+  // through the condense step, retrieval and the fake model end to end.
+  await page.getByPlaceholder(/ask a question/i).fill('What is the capital of France?');
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  const refusalTurn = page
+    .locator('div')
+    .filter({ has: page.getByText('Assistant', { exact: true }) })
+    .last();
+  await expect(refusalTurn).toContainText(NO_ANSWER, { timeout: 45_000 });
+  await expect(refusalTurn).not.toContainText(/paris/i);
 
   // --- conversation persists ----------------------------------------------
   await page.reload();
@@ -141,6 +156,13 @@ test('uploading a text file creates a document and records usage', async ({ page
     // And the token count must be non-zero, not just present.
     await expect(page.getByRole('table')).toContainText(/\d/);
   }).toPass({ timeout: 45_000 });
+
+  // The same user asked two questions in the first test: one cited answer and
+  // one off-topic question the assistant refused. Answer quality records both.
+  const quality = page.getByRole('region', { name: 'Answer quality' });
+  await expect(quality).toContainText('2 answers');
+  await expect(quality).toContainText(/Grounded\s*50%/);
+  await expect(quality).toContainText(/Refused\s*50%/);
 });
 
 test('a signed-out visitor cannot reach the documents page', async ({ page }) => {

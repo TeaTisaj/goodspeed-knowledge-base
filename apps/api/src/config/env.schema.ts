@@ -85,6 +85,17 @@ export const envSchema = z
     AI_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().max(2000).default(1536),
 
     AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+    /**
+     * Ceiling on one answer's completion tokens -- the per-request cost cap.
+     *
+     * Unset, providers fall back to the model's own maximum: OpenRouter
+     * reserves 65k output tokens per request (and rejects it outright on a
+     * low-balance key), and a user who talks the model into a ten-thousand-word
+     * essay is billed for all of it. Generous rather than tight because
+     * reasoning models spend this budget on hidden reasoning before the first
+     * visible token; at 64 they return an empty answer.
+     */
+    AI_ANSWER_MAX_TOKENS: z.coerce.number().int().min(256).max(32_000).default(2048),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
 
     // Retrieval. Defaults chosen so hybrid + RRF is the baseline and the
@@ -92,11 +103,33 @@ export const envSchema = z
     // what decides whether it pays for itself.
     RETRIEVAL_CANDIDATES: z.coerce.number().int().min(1).max(100).default(12),
     RETRIEVAL_TOP_K: z.coerce.number().int().min(1).max(20).default(6),
+    /**
+     * Hypothetical-document expansion: one extra model call that embeds a
+     * plausible answer alongside the question. Off by default -- measured
+     * gain is one paraphrase in four, at a model call per question (eval/
+     * retrieval-experiments.mjs). Never affects the relevance floor.
+     */
+    RETRIEVAL_HYDE: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
     AI_RERANK_ENABLED: z
       .enum(['true', 'false'])
       .default('false')
       .transform((v) => v === 'true'),
     MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(8000),
+    /**
+     * Cosine-similarity floor below which a chunk is not relevant, unless the
+     * keyword arm also matched it. When nothing clears it the API refuses
+     * without calling the model. Specific to the embedding model -- cosine
+     * scales differ widely -- so `pnpm eval` prints the in-scope and
+     * out-of-scope distributions to choose it from. 0 disables the floor.
+     *
+     * Unset, the floor measured for the configured embedding model is used
+     * (CALIBRATED_RELEVANCE_FLOORS in @kb/rag), or none for a model nobody has
+     * calibrated.
+     */
+    RETRIEVAL_MIN_SIMILARITY: z.coerce.number().min(0).max(1).optional(),
   })
   /**
    * A provider must be reachable, and a provider that requires a key must have

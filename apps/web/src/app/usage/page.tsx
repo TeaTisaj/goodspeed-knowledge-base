@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, api } from '@/lib/api';
 import { EmptyState, ErrorBanner, SkeletonRow } from '@/components/ui';
-import type { UsageSummary } from '@kb/contracts';
+import type { AnswerQuality, UsageSummary } from '@kb/contracts';
 
 const DAY_OPTIONS = [7, 30, 90];
 
@@ -87,6 +87,8 @@ export default function UsagePage() {
             ))}
           </div>
 
+          {data.quality.answers > 0 && <AnswerQualityPanel quality={data.quality} />}
+
           <div className="overflow-x-auto rounded-md border">
             <table className="w-full text-sm">
               <thead className="border-b text-left text-xs text-[var(--color-ink-muted)]">
@@ -146,5 +148,58 @@ export default function UsagePage() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The production counterpart of the generation eval's headline numbers. An
+ * ungrounded share that creeps up, or refusals that jump, after a model or
+ * prompt change is the regression signal -- visible here before a user files
+ * it.
+ */
+function AnswerQualityPanel({ quality }: { quality: AnswerQuality }) {
+  const share = (n: number) => `${Math.round((n / quality.answers) * 100)}%`;
+  const stats = [
+    { label: 'Grounded', value: share(quality.grounded), hint: 'cite a source they were given' },
+    {
+      label: 'Refused',
+      value: share(quality.refusals),
+      hint: `${quality.refusedWithoutModel} with no model call`,
+    },
+    {
+      label: 'Ungrounded',
+      value: share(quality.ungrounded),
+      hint: 'neither cite nor refuse',
+      warn: quality.ungrounded > 0,
+    },
+    {
+      label: 'Suspicious sources',
+      value: quality.flaggedAnswers.toLocaleString(),
+      hint: 'answers built on a source that looked like an injection',
+      warn: quality.flaggedAnswers > 0,
+    },
+  ];
+  return (
+    <section aria-label="Answer quality" className="flex flex-col gap-2">
+      <h2 className="text-sm font-medium">
+        Answer quality{' '}
+        <span className="font-normal text-[var(--color-ink-muted)]">
+          · {quality.answers.toLocaleString()} answers
+        </span>
+      </h2>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-md border p-3">
+            <p className="text-xs text-[var(--color-ink-muted)]">{s.label}</p>
+            <p
+              className={`mt-1 text-lg font-semibold tabular-nums ${s.warn ? 'text-[var(--color-warning)]' : ''}`}
+            >
+              {s.value}
+            </p>
+            <p className="text-xs text-[var(--color-ink-muted)]">{s.hint}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

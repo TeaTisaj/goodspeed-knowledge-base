@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   askSchema,
+  classifyGrounding,
+  isNoAnswer,
+  NO_ANSWER,
   createDocumentSchema,
   listDocumentsQuerySchema,
   problemDetailsSchema,
@@ -131,5 +134,44 @@ describe('problemDetailsSchema', () => {
       problemDetailsSchema.safeParse({ type: 't', title: 'x', status: 400, code: 'made_up' })
         .success,
     ).toBe(false);
+  });
+});
+
+describe('refusal detection', () => {
+  it('recognises the contract sentence', () => {
+    expect(isNoAnswer(NO_ANSWER)).toBe(true);
+  });
+
+  it('tolerates the ways models reproduce a fixed sentence imperfectly', () => {
+    expect(isNoAnswer('I couldn’t find that in your documents.')).toBe(true);
+    expect(isNoAnswer("**I couldn't find that in your documents.**")).toBe(true);
+    expect(isNoAnswer("I couldn't find that in your documents")).toBe(true);
+    expect(isNoAnswer(`${NO_ANSWER} They cover deploys and on-call.`)).toBe(true);
+    expect(isNoAnswer(`Sorry — ${NO_ANSWER}`)).toBe(true);
+  });
+
+  it('does not mistake a partial answer for a refusal', () => {
+    // The sentence appearing late means the model answered something first.
+    const partial = `Deploys take eight minutes [1]. As for rollbacks, ${NO_ANSWER}`;
+    expect(isNoAnswer(partial)).toBe(false);
+  });
+
+  it('does not match an ordinary answer', () => {
+    expect(isNoAnswer('Deploys take eight minutes [1].')).toBe(false);
+  });
+});
+
+describe('classifyGrounding', () => {
+  it('is grounded when the answer cites a provided source', () => {
+    expect(classifyGrounding('Eight minutes [1].', 1)).toBe('grounded');
+  });
+
+  it('is a refusal when the answer says the documents do not cover it', () => {
+    expect(classifyGrounding(NO_ANSWER, 0)).toBe('refusal');
+  });
+
+  it('is ungrounded when it neither cites nor refuses', () => {
+    // The dangerous case: a confident answer with nothing behind it.
+    expect(classifyGrounding('Paris is the capital of France.', 0)).toBe('ungrounded');
   });
 });

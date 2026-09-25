@@ -7,6 +7,7 @@ import {
   type EmbeddingProvider,
   type UsageEvent,
 } from '@kb/ai';
+import { calibratedRelevanceFloor } from '@kb/rag';
 import { ConfigService } from '../config/config.service.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
 import { PostgresEmbeddingCache } from './embedding-cache.store.js';
@@ -95,6 +96,22 @@ export class AiService implements OnModuleInit {
         `embeddings=${this.embeddingProvider.id}/${this.embeddingProvider.model} ` +
         `(${this.embeddingProvider.capabilities.dimensions}d)`,
     );
+
+    // The out-of-scope guard is only as good as its floor, and a floor is only
+    // valid for the model it was measured on -- so say which one is in force.
+    const floor =
+      env.RETRIEVAL_MIN_SIMILARITY ?? calibratedRelevanceFloor(this.embeddingProvider.model);
+    if (floor === undefined) {
+      this.logger.warn(
+        `No relevance floor for embedding model "${this.embeddingProvider.model}": off-topic ` +
+          'questions will reach the chat model, whose instructions are then the only guard. ' +
+          'Run `pnpm eval --embed=<provider>:<model>` and set RETRIEVAL_MIN_SIMILARITY from its calibration table.',
+      );
+    } else {
+      this.logger.log(
+        `Relevance floor: ${floor} (${env.RETRIEVAL_MIN_SIMILARITY === undefined ? 'calibrated' : 'configured'})`,
+      );
+    }
 
     if (this.config.isFullyFake) {
       this.logger.warn(

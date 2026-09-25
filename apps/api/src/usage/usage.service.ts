@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { estimateCostUsd, PRICING, type UsageEvent } from '@kb/ai';
+import type { AnswerQuality } from '@kb/contracts';
 import { AppError } from '../common/errors.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
 
@@ -80,6 +81,24 @@ export class UsageService {
       estimatedCostUsd: r.estimated_cost_usd === null ? null : Number(r.estimated_cost_usd),
       avgLatencyMs: r.avg_latency_ms === null ? null : Number(r.avg_latency_ms),
     }));
+  }
+
+  async quality(accessToken: string, days: number): Promise<AnswerQuality> {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await this.supabase
+      .forUser(accessToken)
+      .rpc('answer_quality_summary', { since });
+    if (error) throw AppError.internal(`Failed to load answer quality: ${error.message}`);
+
+    const r = ((data ?? []) as Record<string, unknown>[])[0] ?? {};
+    return {
+      answers: Number(r.answers ?? 0),
+      grounded: Number(r.grounded ?? 0),
+      refusals: Number(r.refusals ?? 0),
+      refusedWithoutModel: Number(r.refused_without_model ?? 0),
+      ungrounded: Number(r.ungrounded ?? 0),
+      flaggedAnswers: Number(r.flagged_answers ?? 0),
+    };
   }
 
   /** Exposed so the UI can explain why some rows show no cost. */

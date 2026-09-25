@@ -17,9 +17,9 @@ const chunk = (n: number, content = `Content number ${n}.`): RetrievedChunk => (
 
 describe('buildPrompt', () => {
   it('numbers sources from one', () => {
-    const { system } = buildPrompt([chunk(1), chunk(2)]);
-    expect(system).toContain('[1] Document 1');
-    expect(system).toContain('[2] Document 2');
+    const { context } = buildPrompt([chunk(1), chunk(2)]);
+    expect(context).toContain('<source id="1" title="Document 1">');
+    expect(context).toContain('<source id="2" title="Document 2">');
   });
 
   it('instructs the model to cite and to refuse when unsupported', () => {
@@ -29,8 +29,8 @@ describe('buildPrompt', () => {
   });
 
   it('states plainly when there are no sources', () => {
-    const { system, used } = buildPrompt([]);
-    expect(system).toContain('(none found)');
+    const { context, used } = buildPrompt([]);
+    expect(context).toContain('no sources matched');
     expect(used).toEqual([]);
   });
 
@@ -53,10 +53,10 @@ describe('buildPrompt', () => {
 
   it('renumbers so citation numbers always match what the model was shown', () => {
     const big = chunk(1, 'x'.repeat(4000));
-    const { system, used } = buildPrompt([big, chunk(2), chunk(3)], {
+    const { context, used } = buildPrompt([big, chunk(2), chunk(3)], {
       maxContextTokens: overhead + 60,
     });
-    expect(system).toContain('[1] Document 2');
+    expect(context).toContain('<source id="1" title="Document 2">');
     expect(used[0]?.id).toBe('chunk-2');
   });
 });
@@ -76,6 +76,16 @@ describe('extractCitationNumbers', () => {
 
   it('ignores bracketed text that is not a citation', () => {
     expect(extractCitationNumbers('an array[i] and [note]')).toEqual([]);
+  });
+
+  it("reads gpt-oss's native lenticular citations", () => {
+    // The Groq preset's default model writes 【1】 whatever the prompt says;
+    // missing these dropped every citation it produced.
+    expect(extractCitationNumbers('Eight minutes【1】, then【3】.')).toEqual([1, 3]);
+  });
+
+  it('reads fullwidth square brackets and tolerates inner spaces', () => {
+    expect(extractCitationNumbers('See \uFF3B2\uFF3D and [ 4 ].')).toEqual([2, 4]);
   });
 
   it('returns nothing for an uncited answer', () => {

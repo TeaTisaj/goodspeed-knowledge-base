@@ -324,6 +324,9 @@ importers:
       typescript:
         specifier: 6.0.3
         version: 6.0.3
+      vitest:
+        specifier: 5.0.1
+        version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(jiti@2.7.0))
 
   packages/ai:
     dependencies:
@@ -389,6 +392,9 @@ importers:
 
   packages/rag:
     dependencies:
+      '@kb/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       gpt-tokenizer:
         specifier: 4.0.0
         version: 4.0.0
