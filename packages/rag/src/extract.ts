@@ -42,10 +42,13 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
  * hard-wrapped text.
  */
 export function cleanExtractedText(raw: string): string {
-  let text = raw.replace(/\r\n?/g, '\n');
+  let text = repairDiacritics(raw.replace(/\r\n?/g, '\n'));
 
-  // Rejoin words hyphenated across a line break.
-  text = text.replace(/(\w)-\n(\w)/g, '$1$2');
+  // Rejoin words hyphenated across a line break, keeping the hyphen of a
+  // compound that was already hyphenated ("end-to-\nend").
+  text = text.replace(/(\w+(?:-\w+)*)-\n(\w)/g, (_, before: string, after: string) =>
+    before.includes('-') ? `${before}-${after}` : `${before}${after}`,
+  );
 
   // Unwrap hard-wrapped lines: a newline between two lowercase-ish characters
   // is a wrap, not a paragraph break. Blank lines are preserved.
@@ -57,6 +60,47 @@ export function cleanExtractedText(raw: string): string {
   return stripRepeatedLines(text)
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/** Spacing accent characters mapped to their combining forms. */
+const SPACING_TO_COMBINING = new Map(
+  [
+    [0x00b4, 0x0301], // acute: ´C -> Ć
+    [0x02cb, 0x0300], // grave
+    [0x02c7, 0x030c], // caron: ˇs -> š
+    [0x00a8, 0x0308], // diaeresis
+    [0x02c6, 0x0302], // circumflex
+    [0x02dc, 0x0303], // tilde
+    [0x00b8, 0x0327], // cedilla
+    [0x02d8, 0x0306], // breve
+    [0x02da, 0x030a], // ring
+    [0x02dd, 0x030b], // double acute
+    [0x02db, 0x0328], // ogonek
+    [0x02d9, 0x0307], // dot above
+  ].map(([spacing, combining]) => [
+    String.fromCodePoint(spacing!),
+    String.fromCodePoint(combining!),
+  ]),
+);
+
+const SPACING_ACCENT_BEFORE_LETTER = new RegExp(
+  `([${[...SPACING_TO_COMBINING.keys()].join('')}])(\\p{L})`,
+  'gu',
+);
+
+/**
+ * PDFs typeset with LaTeX often store an accented letter as a separate accent
+ * glyph followed by the base letter, so "Ćetojević" extracts as "´Cetojevi´c".
+ * That breaks names in titles and makes keyword search miss them. Moving the
+ * accent after its letter as a combining mark and composing (NFC) restores it.
+ */
+function repairDiacritics(text: string): string {
+  return text
+    .replace(
+      SPACING_ACCENT_BEFORE_LETTER,
+      (_, accent: string, letter: string) => letter + SPACING_TO_COMBINING.get(accent)!,
+    )
+    .normalize('NFC');
 }
 
 /**

@@ -15,6 +15,23 @@ describe('cleanExtractedText', () => {
     expect(cleanExtractedText('the deploy-\nment process')).toContain('deployment');
   });
 
+  it('keeps the hyphen of a compound split across a line break', () => {
+    expect(cleanExtractedText('shipping systems end-to-\nend for clients')).toContain('end-to-end');
+  });
+
+  it('restores accents a PDF stored as separate glyphs', () => {
+    const acute = String.fromCodePoint(0x00b4);
+    const caron = String.fromCodePoint(0x02c7);
+    const out = cleanExtractedText(`Tea ${acute}Cetojevi${acute}c Tisaj, ${caron}Sibenik`);
+    expect(out).toBe('Tea Ćetojević Tisaj, Šibenik');
+  });
+
+  it('composes decomposed accents so keyword search matches them', () => {
+    expect(cleanExtractedText('Cetojevic'.replace('c', `c${String.fromCodePoint(0x0301)}`))).toBe(
+      'Cetojević',
+    );
+  });
+
   it('unwraps hard-wrapped lines into sentences', () => {
     // The sentence splitter cannot find boundaries in hard-wrapped text.
     const out = cleanExtractedText('a rollback takes about\neight minutes to finish');
