@@ -1,0 +1,269 @@
+{
+  "ranAt": "2026-09-25T18:22:20.473Z",
+  "complete": false,
+  "chat": "groq/openai/gpt-oss-20b",
+  "embeddings": "openrouter/openai/text-embedding-3-small",
+  "judge": "groq/qwen/qwen3.8-27b",
+  "floor": 0.15,
+  "hyde": false,
+  "promptVersion": "61f1f4b53f7e",
+  "samples": 1,
+  "judgeCalibration": null,
+  "cases": [
+    {
+      "id": "ho-typos",
+      "sample": 0,
+      "split": "holdout",
+      "category": "answerable",
+      "question": "hw long dose a rolback take",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "hw long dose a rolback take",
+      "answer": "A rollback takes about **eight minutes end‑to‑end**. [2]",
+      "error": null,
+      "sources": [
+        "password:0",
+        "runbook:0",
+        "architecture:4",
+        "data:2",
+        "runbook:4",
+        "retro:1"
+      ],
+      "failed": [],
+      "judged": {
+        "faithfulness": {
+          "score": 1,
+          "claims": [
+            {
+              "claim": "A rollback takes about eight minutes end-to-end.",
+              "supported": true,
+              "reason": "Source 2 explicitly states: 'A rollback takes about eight minutes end to end.'"
+            }
+          ]
+        },
+        "correctness": {
+          "verdict": "correct",
+          "acknowledgesGap": false,
+          "reason": "The answer accurately states the duration of the rollback as eight minutes, matching the reference."
+        }
+      }
+    },
+    {
+      "id": "ho-casual-refund",
+      "sample": 0,
+      "split": "holdout",
+      "category": "answerable",
+      "question": "whats the refund limit w/o a manager",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "whats the refund limit w/o a manager",
+      "answer": "The refund limit that can be approved without a manager is **$500**【1】.",
+      "error": null,
+      "sources": [
+        "support:2",
+        "finance:3",
+        "expenses:0",
+        "support:3",
+        "finance:1",
+        "onboarding:3"
+      ],
+      "failed": [],
+      "judged": {
+        "faithfulness": {
+          "score": 1,
+          "claims": [
+            {
+              "claim": "The refund limit that can be approved without a manager is $500",
+              "supported": true,
+              "reason": "Source 1 explicitly states: 'Refunds up to five hundred dollars can be approved without a manager.'"
+            }
+          ]
+        },
+        "correctness": {
+          "verdict": "correct",
+          "acknowledgesGap": false,
+          "reason": "The answer correctly states the $500 limit as per the reference."
+        }
+      }
+    },
+    {
+      "id": "ho-terse",
+      "sample": 0,
+      "split": "holdout",
+      "category": "answerable",
+      "question": "backups - how long?",
+      "pass": false,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "backups - how long?",
+      "answer": "Database backups are kept for **35 days** before they are purged or archived.",
+      "error": null,
+      "sources": [
+        "data:2",
+        "data:0",
+        "architecture:4",
+        "onboarding:4",
+        "runbook:4",
+        "runbook:0"
+      ],
+      "failed": [
+        {
+          "name": "grounded",
+          "pass": false,
+          "detail": "no valid citation"
+        },
+        {
+          "name": "cites-the-answer",
+          "pass": false,
+          "detail": "no cited chunk contains \"thirty-five days\""
+        }
+      ],
+      "judged": {
+        "faithfulness": {
+          "score": 0.5,
+          "claims": [
+            {
+              "claim": "Database backups are kept for 35 days",
+              "supported": true,
+              "reason": "Source 1 explicitly states: 'Database backups are kept for thirty-five days'."
+            },
+            {
+              "claim": "Backups are purged or archived after 35 days",
+              "supported": false,
+              "reason": "Source 1 states backups are 'tested monthly' and mentions historical records are archived after 90 days, but does not state that the 35-day backups are purged or archived at that specific time."
+            }
+          ]
+        },
+        "correctness": {
+          "verdict": "partial",
+          "acknowledgesGap": false,
+          "reason": "The answer correctly states the retention period (35 days) but omits the fact that backups are tested monthly."
+        }
+      }
+    },
+    {
+      "id": "ho-german",
+      "sample": 0,
+      "split": "holdout",
+      "category": "answerable",
+      "question": "Wie lange werden Anwendungslogs aufbewahrt?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "Wie lange werden Anwendungslogs aufbewahrt?",
+      "answer": "Anwendungslogs werden **vierzehn Tage** aufbewahrt. [1]",
+      "error": null,
+      "sources": [
+        "data:1",
+        "data:0",
+        "onboarding:4",
+        "runbook:4",
+        "data:4",
+        "architecture:4"
+      ],
+      "failed": [],
+      "judged": {
+        "faithfulness": {
+          "score": 1,
+          "claims": [
+            {
+              "claim": "Anwendungslogs werden vierzehn Tage aufbewahrt.",
+              "supported": true,
+              "reason": "Source 1 explicitly states: 'Application logs are retained for fourteen days.'"
+            }
+          ]
+        },
+        "correctness": {
+          "verdict": "correct",
+          "acknowledgesGap": false,
+          "reason": "The answer correctly states that application logs are retained for fourteen days, matching the reference."
+        }
+      }
+    },
+    {
+      "id": "ho-vague-support",
+      "sample": 0,
+      "split": "holdout",
+      "category": "answerable",
+      "question": "anything on how fast support should get back to paying customers?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "anything on how fast support should get back to paying customers?",
+      "answer": "Support should reply to a paying customer within **four business hours** of the initial contact. [1]",
+      "error": null,
+      "sources": [
+        "support:0",
+        "runbook:4",
+        "onboarding:3",
+        "password:0",
+        "runbook:0",
+        "data:0"
+      ],
+      "failed": [],
+      "judged": {
+        "faithfulness": {
+          "score": 1,
+          "claims": [
+            {
+              "claim": "Support should reply to a paying customer within four business hours of the initial contact.",
+              "supported": true,
+              "reason": "Source 1 explicitly states: 'First response to a paying customer is due within four business hours.'"
+            }
+          ]
+        },
+        "correctness": {
+          "verdict": "correct",
+          "acknowledgesGap": false,
+          "reason": "The answer accurately states the four business hour requirement for paying customers as specified in the reference."
+        }
+      }
+    },
+    {
+      "id": "ho-redis",
+      "sample": 0,
+      "split": "holdout",
+      "category": "paraphrase",
+      "question": "Is Redis used anywhere in our stack?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "Is Redis used anywhere in our stack?",
+      "answer": "No. The documents state that jobs are queued in Postgres, not Redis, and there is no other mention of Redis being used in the stack. [1]",
+      "error": null,
+      "sources": [
+        "architecture:2",
+        "architecture:1",
+        "security:1",
+        "retro:1",
+        "support:1",
+        "architecture:4"
+      ],
+      "failed": [],
+      "judged": {
+        "faithfulness": {
+          "score": 0.5,
+          "claims": [
+            {
+              "claim": "Jobs are queued in Postgres, not Redis.",
+              "supported": true,
+              "reason": "Source 1 explicitly states: 'Jobs are queued in Postgres, not Redis.'"
+            },
+            {
+              "claim": "There is no other mention of Redis being used in the stack.",
+              "supported": false,
+              "reason": "The sources do not contain a statement confirming the absence of Redis elsewhere in the stack; they only specify the job queueing mechanism. Asserting a global absence based on the provided text is a generalization not explicitly supported by the sources."
+            }
+          ]
+        },
+        "correctness": {
+          "verdict": "correct",
+          "acknowledgesGap": false,
+          "reason": "The answer correctly states that Redis is not used and that jobs are queued in Postgres, aligning with the reference facts."
+        }
+      }
+    }
+  ]
+}

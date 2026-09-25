@@ -23,96 +23,30 @@
  * means a lower-ranked chunk is likelier to be dropped before the model sees it.
  */
 import { buildEmbeddingProvider } from '@kb/ai';
-import { chunkText, reciprocalRankFusion } from '@kb/rag';
 import { CORPUS } from './fixtures/build-corpus.mjs';
+import { CASES, OUT_OF_SCOPE_PROBES } from './fixtures/generation-cases.mjs';
 import { QUESTIONS } from './fixtures/questions.mjs';
+import { loadEvalEnv, resolveTarget } from './lib/providers.mjs';
+import { buildIndex, search } from './lib/retrieval.mjs';
 
 const arg = (name, fallback) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.split('=')[1] : fallback;
+  return hit ? hit.slice(name.length + 3) : fallback;
 };
 
-const providerId = arg('provider', 'fake');
+loadEvalEnv();
 const KS = [1, 3, 5];
 
-const tokenize = (t) =>
-  t.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((x) => x.length > 1);
-
-/** BM25-lite, standing in for the Postgres full-text arm. */
-function keywordRank(query, chunks, df, avgLen) {
-  const terms = tokenize(query);
-  const N = chunks.length;
-  return chunks
-    .map((c) => {
-      let score = 0;
-      for (const term of terms) {
-        const f = c.tf.get(term);
-        if (!f) continue;
-        const n = df.get(term) ?? 0;
-        const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
-        score += idf * ((f * 2.2) / (f + 1.2 * (0.25 + 0.75 * (c.len / avgLen))));
-      }
-      return { id: c.id, score };
-    })
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score);
-}
-
-const cosine = (a, b) => {
-  let s = 0;
-  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
-  return s;
-};
-
-async function buildIndex(embedder, opts) {
-  const chunks = [];
-  for (const doc of CORPUS) {
-    for (const c of chunkText(doc.content, opts)) {
-      chunks.push({ id: `${doc.id}:${c.index}`, docId: doc.id, content: c.content });
-    }
-  }
-
-  const { embeddings } = await embedder.embed({ texts: chunks.map((c) => c.content) });
-
-  const df = new Map();
-  let totalLen = 0;
-  chunks.forEach((c, i) => {
-    c.vector = embeddings[i];
-    const tokens = tokenize(c.content);
-    c.len = tokens.length;
-    totalLen += tokens.length;
-    c.tf = new Map();
-    for (const t of tokens) c.tf.set(t, (c.tf.get(t) ?? 0) + 1);
-    for (const t of new Set(tokens)) df.set(t, (df.get(t) ?? 0) + 1);
-  });
-
-  return { chunks, df, avgLen: totalLen / (chunks.length || 1) };
-}
-
 async function evaluate(embedder, index, mode) {
-  const { chunks, df, avgLen } = index;
-  const byId = new Map(chunks.map((c) => [c.id, c]));
-
   const hits = Object.fromEntries(KS.map((k) => [k, 0]));
   let reciprocalSum = 0;
   const misses = [];
 
   for (const { q, span } of QUESTIONS) {
-    const { embeddings } = await embedder.embed({ texts: [q] });
-    const qv = embeddings[0];
-
-    const semantic = chunks
-      .map((c) => ({ id: c.id, score: cosine(qv, c.vector) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 20);
-
-    const keyword = keywordRank(q, chunks, df, avgLen).slice(0, 20);
-
-    const ranked =
-      mode === 'semantic' ? semantic : mode === 'keyword' ? keyword : reciprocalRankFusion([semantic, keyword]);
+    const ranked = await search(embedder, index, q, mode);
 
     // Chunk-level: the first returned chunk that actually contains the answer.
-    const rank = ranked.findIndex((r) => byId.get(r.id)?.content.includes(span));
+    const rank = ranked.findIndex((r) => r.content.includes(span));
 
     if (rank === -1) {
       misses.push({ q, span, got: ranked.slice(0, 2).map((r) => r.id) });
@@ -131,11 +65,10 @@ async function evaluate(embedder, index, mode) {
 
 // --- run -------------------------------------------------------------------
 
-const embedder = buildEmbeddingProvider({
-  provider: providerId,
-  dimensions: 1536,
-  apiKey: process.env.AI_EMBEDDING_API_KEY,
-});
+// `--provider=openai` keeps working; `--embed=openrouter:openai/text-embedding-3-small`
+// names the model too. Keys come from AI_EMBEDDING_API_KEY or LIVE_<ID>_API_KEY.
+const embedTarget = resolveTarget(arg('embed', arg('provider', 'fake')), 'embedding');
+const embedder = buildEmbeddingProvider({ ...embedTarget, dimensions: 1536 });
 
 const pct = (n) => `${(n * 100).toFixed(0)}%`;
 const row = (label, r, extra = '', corpusShare = null) =>
@@ -150,7 +83,7 @@ console.log(`  scoring     chunk-level: the answer span must be in a retrieved c
 const header = `  ${'config'.padEnd(12)} ${''.padEnd(11)} ${'hit@1'.padStart(5)}  ${'hit@3'.padStart(5)}  ${'hit@5'.padStart(5)}  MRR`;
 const headerWithShare = `${header}   top5/corpus`;
 
-const base = await buildIndex(embedder, { maxTokens: 512, overlapTokens: 64 });
+const base = await buildIndex(embedder, CORPUS, { maxTokens: 512, overlapTokens: 64 });
 
 console.log(`Retrieval mode (512-token chunks, 64 overlap, ${base.chunks.length} chunks)`);
 console.log(header);
@@ -165,7 +98,10 @@ console.log(headerWithShare);
 /** Chunk counts per size, so the commentary below quotes the run, not a memory. */
 const sizeChunkCounts = {};
 for (const maxTokens of [256, 512, 1024]) {
-  const idx = await buildIndex(embedder, { maxTokens, overlapTokens: Math.round(maxTokens / 8) });
+  const idx = await buildIndex(embedder, CORPUS, {
+    maxTokens,
+    overlapTokens: Math.round(maxTokens / 8),
+  });
   const r = await evaluate(embedder, idx, 'hybrid');
   // Larger chunks mean fewer of them, so a fixed top-5 covers a bigger share of
   // the corpus. Without this column the chunk-size table reads as "bigger is
@@ -183,7 +119,7 @@ console.log(
 console.log(`\nOverlap (512-token chunks, hybrid)`);
 console.log(header);
 for (const overlapTokens of [0, 64, 128]) {
-  const idx = await buildIndex(embedder, { maxTokens: 512, overlapTokens });
+  const idx = await buildIndex(embedder, CORPUS, { maxTokens: 512, overlapTokens });
   const r = await evaluate(embedder, idx, 'hybrid');
   console.log(row(`${overlapTokens} tok`, r, `${idx.chunks.length} chunks`));
 }
@@ -192,8 +128,85 @@ if (modes.hybrid.misses.length > 0) {
   console.log(`\nStill missed by hybrid (${modes.hybrid.misses.length}/${QUESTIONS.length}):`);
   for (const m of modes.hybrid.misses.slice(0, 6)) {
     console.log(`  "${m.q}"`);
-    console.log(`     wanted a chunk containing "${m.span}"; top was ${m.got.join(', ') || '(nothing)'}`);
+    console.log(
+      `     wanted a chunk containing "${m.span}"; top was ${m.got.join(', ') || '(nothing)'}`,
+    );
   }
+}
+
+// --- relevance floor calibration --------------------------------------------
+// RETRIEVAL_MIN_SIMILARITY is only meaningful relative to one embedding model's
+// cosine scale, so it is chosen from this table rather than guessed.
+//
+// The two sides are measured differently, because the floor is applied *per
+// chunk*:
+//   - in scope: the similarity of the chunk that CONTAINS THE ANSWER. That is
+//     the chunk the floor must never cut. (The first version of this table used
+//     each question's best chunk instead, and the floor it recommended silently
+//     dropped the answer to a paraphrased question whose best chunk was a
+//     different, merely related one.)
+//   - out of scope: the best similarity any chunk reaches, since one surviving
+//     chunk is enough to send the question to the model.
+const semanticAll = (q) => search(embedder, base, q, 'semantic', base.chunks.length);
+const answerSimilarity = async (q, span) =>
+  Math.max(
+    ...(await semanticAll(q)).filter((r) => r.content.includes(span)).map((r) => r.similarity),
+  );
+const bestSimilarity = async (q) => (await semanticAll(q))[0].similarity;
+
+// The retrieval questions plus the generation eval's paraphrases, which share
+// deliberately few words with the text that answers them.
+const inScopeItems = [
+  ...QUESTIONS.map((x) => [x.q, x.span]),
+  ...CASES.filter((c) => c.span && c.category === 'paraphrase' && (c.split ?? 'dev') === 'dev').map(
+    (c) => [c.q, c.span],
+  ),
+];
+const inScope = [];
+for (const [q, span] of inScopeItems) inScope.push(await answerSimilarity(q, span));
+const outScope = [];
+for (const q of OUT_OF_SCOPE_PROBES) outScope.push(await bestSimilarity(q));
+
+const quantile = (xs, p) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.floor(p * (s.length - 1))))];
+};
+const f3 = (n) => n.toFixed(3);
+const inMin = Math.min(...inScope);
+const outMax = Math.max(...outScope);
+
+console.log(`\nRelevance floor calibration (${embedder.id}/${embedder.model})`);
+console.log(
+  `  ${'set'.padEnd(26)} ${'n'.padStart(3)}  ${'min'.padStart(6)}  ${'p10'.padStart(6)}  ${'median'.padStart(6)}  ${'max'.padStart(6)}`,
+);
+for (const [label, xs] of [
+  ['answer chunk, in scope', inScope],
+  ['best chunk, out of scope', outScope],
+]) {
+  console.log(
+    `  ${label.padEnd(26)} ${String(xs.length).padStart(3)}  ${f3(Math.min(...xs)).padStart(6)}  ${f3(quantile(xs, 0.1)).padStart(6)}  ${f3(quantile(xs, 0.5)).padStart(6)}  ${f3(Math.max(...xs)).padStart(6)}`,
+  );
+}
+if (inMin > outMax) {
+  console.log(
+    `  Separable: every in-scope question beats every probe. Any floor in (${f3(outMax)}, ${f3(inMin)}) refuses all probes`,
+  );
+  console.log(
+    `  without losing an answer; the midpoint ${f3((inMin + outMax) / 2)} leaves the most margin on both sides.`,
+  );
+} else {
+  // The highest floor that still keeps every answer chunk, less a margin for
+  // questions vaguer than these.
+  const floor = Math.floor((inMin - 0.03) * 100) / 100;
+  const through = OUT_OF_SCOPE_PROBES.map((q, i) => [q, outScope[i]]).filter(([, x]) => x >= floor);
+  console.log(
+    `  Overlapping. A floor of ${floor.toFixed(2)} (answer-chunk minimum less 0.03) keeps every answer chunk and refuses`,
+  );
+  console.log(
+    `  ${outScope.length - through.length}/${outScope.length} probes with no model call. These still reach the model, whose rules are the second line:`,
+  );
+  for (const [q, x] of through)
+    console.log(`    ${f3(x)}  "${q.length > 70 ? `${q.slice(0, 67)}...` : q}"`);
 }
 
 console.log('');
@@ -202,6 +215,8 @@ console.log('');
 // user whose question stopped working.
 const threshold = Number(arg('min-hit-rate', '0'));
 if (modes.hybrid.hit[5] < threshold) {
-  console.error(`FAIL: hybrid hit@5 ${pct(modes.hybrid.hit[5])} is below the ${pct(threshold)} threshold.`);
+  console.error(
+    `FAIL: hybrid hit@5 ${pct(modes.hybrid.hit[5])} is below the ${pct(threshold)} threshold.`,
+  );
   process.exit(1);
 }

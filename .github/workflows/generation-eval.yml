@@ -1,0 +1,71 @@
+name: Generation eval
+
+# Answer quality, refusals and prompt-injection resistance, measured against a
+# real model. The structural half of the injection defence (tags, escaping,
+# invisible-character stripping, the relevance floor) is covered offline by
+# `pnpm test` on every PR; this job measures the half only a model can show --
+# whether it actually ignores a poisoned document.
+#
+# Not on pull_request: it needs provider keys and depends on free-tier quotas,
+# so a vendor's bad afternoon would block unrelated PRs. Weekly, and on demand
+# before a prompt change is merged. It gates deterministically -- any landed
+# attack fails the run -- and uploads the full per-case answers either way.
+on:
+  schedule:
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      chat:
+        description: 'Model under test (provider:model)'
+        default: 'groq:openai/gpt-oss-120b'
+      judge:
+        description: 'Judge model, a different family from the one under test (empty to skip)'
+        default: 'groq:qwen/qwen3.8-27b'
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  generation:
+    name: answers, refusals, injection resistance
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LIVE_GROQ_API_KEY: ${{ secrets.LIVE_GROQ_API_KEY }}
+      LIVE_OPENROUTER_API_KEY: ${{ secrets.LIVE_OPENROUTER_API_KEY }}
+    steps:
+      - name: Skip without credentials
+        if: env.LIVE_GROQ_API_KEY == '' || env.LIVE_OPENROUTER_API_KEY == ''
+        run: echo "::notice::LIVE_GROQ_API_KEY and LIVE_OPENROUTER_API_KEY are not set; skipping." && exit 0
+
+      - uses: actions/checkout@v5
+        if: env.LIVE_GROQ_API_KEY != '' && env.LIVE_OPENROUTER_API_KEY != ''
+
+      - uses: pnpm/action-setup@v4
+        if: env.LIVE_GROQ_API_KEY != '' && env.LIVE_OPENROUTER_API_KEY != ''
+
+      - uses: actions/setup-node@v5
+        if: env.LIVE_GROQ_API_KEY != '' && env.LIVE_OPENROUTER_API_KEY != ''
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install and build
+        if: env.LIVE_GROQ_API_KEY != '' && env.LIVE_OPENROUTER_API_KEY != ''
+        run: pnpm install --frozen-lockfile && pnpm build --filter @kb/ai --filter @kb/rag --filter @kb/contracts
+
+      - name: Evaluate
+        if: env.LIVE_GROQ_API_KEY != '' && env.LIVE_OPENROUTER_API_KEY != ''
+        run: >
+          pnpm eval:generation
+          --chat=${{ inputs.chat || 'groq:openai/gpt-oss-120b' }}
+          --embed=openrouter:openai/text-embedding-3-small
+          ${{ (inputs.judge || 'groq:qwen/qwen3.8-27b') != '' && format('--judge={0}', inputs.judge || 'groq:qwen/qwen3.8-27b') || '' }}
+          --concurrency=2 --save --gate
+
+      - uses: actions/upload-artifact@v4
+        if: always() && env.LIVE_GROQ_API_KEY != '' && env.LIVE_OPENROUTER_API_KEY != ''
+        with:
+          name: generation-eval
+          path: eval/results/

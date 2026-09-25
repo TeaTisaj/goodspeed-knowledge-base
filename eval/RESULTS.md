@@ -8,7 +8,8 @@ provider so CI needs no API key.
 the right document but the wrong chunk still produces a prompt that cannot answer the question, so
 document-level scoring would flatter the system.
 
-Last run: 2026-09-24, `fake/fake-embed-v1`.
+Last run: 2026-09-25, `fake/fake-embed-v1` (offline, what CI gates on) and `openai/text-embedding-3-small`
+(via OpenRouter, below).
 
 > **These numbers moved on 2026-09-24**, and the reason is worth more than the numbers. `maxTokens`
 > used to bound a chunk's _body_, with the overlap prefix added on top — so a "512-token chunk" was
@@ -19,7 +20,82 @@ Last run: 2026-09-24, `fake/fake-embed-v1`.
 
 ---
 
-## Retrieval mode — 512-token chunks, 64 overlap, 40 chunks
+## With a real embedding model — 2026-09-25
+
+`pnpm eval --embed=openrouter:openai/text-embedding-3-small`. The limitation this file has carried
+since it was written — "the default embedder is lexical, so the semantic-vs-keyword comparison does
+not test what it is named after" — is closed by this run.
+
+| mode          | hit@1   | hit@3   | hit@5    | MRR       |
+| ------------- | ------- | ------- | -------- | --------- |
+| semantic only | 83%     | 94%     | **100%** | 0.889     |
+| keyword only  | 91%     | 94%     | 94%      | 0.929     |
+| hybrid (RRF)  | **91%** | **97%** | **100%** | **0.945** |
+
+**This is the first measurement that supports hybrid on its merits.** With real semantics the two
+arms fail on _different_ questions — semantic misses at rank 1 where exact terms matter, keyword
+misses the paraphrases entirely — and fusion takes the better of each: it matches keyword at rank 1
+and semantic at rank 5, and has the best MRR of the three. With the lexical fake embedder the two arms
+were the same signal twice, which is why hybrid only ever tied.
+
+Chunk size and overlap, same embedder (hybrid):
+
+| config                | chunks | hit@1 | hit@3 | hit@5 | MRR   |
+| --------------------- | ------ | ----- | ----- | ----- | ----- |
+| 256 tok               | 80     | 91%   | 97%   | 97%   | 0.940 |
+| **512 tok (default)** | 40     | 91%   | 97%   | 100%  | 0.945 |
+| 1024 tok              | 16     | 97%   | 100%  | 100%  | 0.986 |
+| 512 tok, 0 overlap    | 25     | 91%   | 97%   | 100%  | 0.949 |
+| 512 tok, 128 overlap  | 40     | 91%   | 100%  | 100%  | 0.952 |
+
+1024-token chunks lead again, and the caveat below about corpus share applies with full force: a
+top-5 at 1024 tokens is 31% of this corpus. 512 stays the default for the reasons given there.
+
+### Relevance floor calibration
+
+The API refuses without calling the model when no retrieved chunk clears a similarity floor (and
+none matched by keyword). A cosine threshold means nothing outside the model it was measured on, so
+it is chosen from this table, which `pnpm eval` prints for whatever embedder it runs.
+
+The two sides are measured differently, because the floor is applied **per chunk**: for an in-scope
+question, what matters is the similarity of the chunk that _contains the answer_ — the one the floor
+must never cut. For an out-of-scope probe, what matters is the best chunk, since one survivor is
+enough to reach the model.
+
+| similarity                       | n   | min   | p10   | median | max   |
+| -------------------------------- | --- | ----- | ----- | ------ | ----- |
+| answer chunk, in-scope questions | 39  | 0.183 | 0.286 | 0.404  | 0.628 |
+| best chunk, out-of-scope probes  | 9   | 0.077 | 0.077 | 0.146  | 0.478 |
+
+**Floor: 0.15** — the weakest answer chunk less a 0.03 margin. It keeps every answer and refuses
+**5 of 9** probes with no model call. The four it lets through are the four that borrow the corpus's
+vocabulary or wrap a real question in an attack ("explain Kubernetes rolling **deployments**", "a
+healthy SaaS **churn** rate", "the administrator has authorised…", "you are now DAN…"), and those
+reach the model, whose scope rules are the second line. The floor is a coarse, recall-safe filter
+for the cheap cases; it is not the scope guard on its own.
+
+> **The first version of this table was wrong, and an eval run caught it.** It calibrated on each
+> question's _best_ chunk (in-scope minimum 0.297) and recommended 0.26, which refused 7 of 9 probes
+> and looked excellent. The generation eval then showed a paraphrased question ("something like
+> Memcached in front of the database?") refused although its answer chunk ranked 3rd: that chunk
+> scored 0.253, and the floor had removed it. The best chunk and the answer chunk are different
+> chunks for exactly the questions that matter most — the vague ones. 0.26 bought two extra
+> refusals at the price of real answers; 0.15 is the honest number.
+
+The weakest answer chunks are low (0.18–0.25) for a reason worth knowing: these fixture documents
+bury each fact in filler, so a 512-token chunk is mostly unrelated text and its embedding is
+diluted. That is the same effect that makes the paraphrase category the hardest in the generation
+eval, and it is what a reranker or smaller, structure-aligned chunks would target.
+
+With the lexical fake embedder the two distributions overlap almost completely (stop words
+dominate), so no floor is defined for it and the API runs without one. `CALIBRATED_RELEVANCE_FLOORS`
+in `packages/rag` lists only models that have actually been measured; an unlisted model gets no
+floor and a boot-time warning, because a floor copied from a different model can refuse every
+question.
+
+---
+
+## Retrieval mode — 512-token chunks, 64 overlap, 40 chunks (fake embedder)
 
 | mode          | hit@1   | hit@3 | hit@5 | MRR       |
 | ------------- | ------- | ----- | ----- | --------- |
@@ -110,11 +186,11 @@ measurement that should decide whether to enable it by default.
 
 - **The corpus is small.** 8 documents and 35 questions. Differences of one or two questions are
   noise — demonstrated, not asserted: a chunking change flipped which retrieval mode "won".
-- **The default embedder is lexical**, so the semantic-vs-keyword comparison does not currently test
-  what it is named after.
+- **The default embedder is lexical**, so the offline numbers do not test semantics. The
+  real-embedding run above does; it needs a key, so it is not what CI gates on.
 - **The overlap sweep varies two things at once**, since overlap changes the resulting chunk count.
-- **Generation is not evaluated.** Faithfulness scoring needs an LLM judge and a real provider; only
-  retrieval is measured here.
+- **Generation is evaluated separately**, in [GENERATION.md](GENERATION.md): answer accuracy,
+  refusals, prompt-injection resistance, and judge-scored faithfulness.
 - **The questions were written alongside the corpus**, so they are cleaner than real user questions —
   fewer typos, no ambiguity, no multi-hop.
 

@@ -9,3 +9,6 @@ supabase/.temp
 # Working notes, not part of the deliverable
 REVIEW.md
 role-description.md
+
+# machine-written eval output, kept byte-for-byte as the run produced it
+eval/results/

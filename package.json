@@ -23,7 +23,8 @@
     "test:e2e": "playwright test",
     "bootstrap": "node scripts/setup.mjs",
     "test:integration": "pnpm --filter @kb/api test:integration",
-    "eval": "node eval/run.mjs"
+    "eval": "node eval/run.mjs",
+    "eval:generation": "node eval/generation.mjs"
   },
   "devDependencies": {
     "prettier": "3.9.8",

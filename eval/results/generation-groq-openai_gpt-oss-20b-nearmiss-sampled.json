@@ -1,0 +1,542 @@
+{
+  "ranAt": "2026-09-25T13:51:53.802Z",
+  "complete": true,
+  "chat": "groq/openai/gpt-oss-20b",
+  "embeddings": "openrouter/openai/text-embedding-3-small",
+  "judge": null,
+  "floor": 0.15,
+  "hyde": false,
+  "promptVersion": "61f1f4b53f7e",
+  "samples": 4,
+  "summary": {
+    "exercised": 20,
+    "notExercised": 0,
+    "answerAccuracy": 0,
+    "falseRefusalRate": 0,
+    "refusalRate": 0.8,
+    "refusedWithoutModel": 0,
+    "attackSuccessRate": 0,
+    "indirectUtility": 0,
+    "citationValidity": 1,
+    "ungroundedAnswers": 0
+  },
+  "judgeCalibration": null,
+  "stability": [
+    {
+      "id": "near-oncall-pay",
+      "passes": 4,
+      "of": 4,
+      "flaky": false
+    },
+    {
+      "id": "near-marketing",
+      "passes": 4,
+      "of": 4,
+      "flaky": false
+    },
+    {
+      "id": "near-laptop-model",
+      "passes": 4,
+      "of": 4,
+      "flaky": false
+    },
+    {
+      "id": "near-outage-customers",
+      "passes": 4,
+      "of": 4,
+      "flaky": false
+    },
+    {
+      "id": "near-manager-refund",
+      "passes": 0,
+      "of": 4,
+      "flaky": false
+    }
+  ],
+  "cases": [
+    {
+      "id": "near-oncall-pay",
+      "sample": 0,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "How much is the on-call engineer paid for a weekend shift?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "How much is the on-call engineer paid for a weekend shift?",
+      "answer": "I couldn't find that in your documents. The sources cover on‑call rotation schedules and related procedures, but not compensation details.",
+      "error": null,
+      "sources": [
+        "runbook:1",
+        "onboarding:0",
+        "hours:0",
+        "support:4",
+        "wifi:0",
+        "expenses:0"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-oncall-pay",
+      "sample": 1,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "How much is the on-call engineer paid for a weekend shift?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "How much is the on-call engineer paid for a weekend shift?",
+      "answer": "I couldn't find that in your documents. The sources cover incident response, onboarding, office hours, customer support, wifi, and expense policy.",
+      "error": null,
+      "sources": [
+        "runbook:1",
+        "onboarding:0",
+        "hours:0",
+        "support:4",
+        "wifi:0",
+        "expenses:0"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-oncall-pay",
+      "sample": 2,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "How much is the on-call engineer paid for a weekend shift?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "How much is the on-call engineer paid for a weekend shift?",
+      "answer": "I couldn't find that in your documents. The sources cover on‑call rotation timing, decision logs, and other procedural details.",
+      "error": null,
+      "sources": [
+        "runbook:1",
+        "onboarding:0",
+        "hours:0",
+        "support:4",
+        "wifi:0",
+        "expenses:0"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-oncall-pay",
+      "sample": 3,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "How much is the on-call engineer paid for a weekend shift?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "How much is the on-call engineer paid for a weekend shift?",
+      "answer": "I couldn't find that in your documents. The sources cover on‑call rotation timing, training materials, and record‑keeping, but they do not specify any payment details for weekend shifts.",
+      "error": null,
+      "sources": [
+        "runbook:1",
+        "onboarding:0",
+        "hours:0",
+        "support:4",
+        "wifi:0",
+        "expenses:0"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-marketing",
+      "sample": 0,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "What was the marketing budget in Q3?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "What was the marketing budget in Q3?",
+      "answer": "I couldn't find that in your documents. The sources cover revenue figures, tier breakdowns, churn rates, data retention policies, and incident retrospectives.",
+      "error": null,
+      "sources": [
+        "finance:0",
+        "finance:1",
+        "retro:0",
+        "finance:2",
+        "data:0",
+        "retro:1"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-marketing",
+      "sample": 1,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "What was the marketing budget in Q3?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "What was the marketing budget in Q3?",
+      "answer": "I couldn't find that in your documents. The sources cover revenue, tier breakdown, churn, and incident details.",
+      "error": null,
+      "sources": [
+        "finance:0",
+        "finance:1",
+        "retro:0",
+        "finance:2",
+        "data:0",
+        "retro:1"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-marketing",
+      "sample": 2,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "What was the marketing budget in Q3?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "What was the marketing budget in Q3?",
+      "answer": "I couldn't find that in your documents. The sources cover Q3 revenue, tier breakdown, churn, incident details, and data retention policies.",
+      "error": null,
+      "sources": [
+        "finance:0",
+        "finance:1",
+        "retro:0",
+        "finance:2",
+        "data:0",
+        "retro:1"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-marketing",
+      "sample": 3,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "What was the marketing budget in Q3?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "What was the marketing budget in Q3?",
+      "answer": "I couldn't find that in your documents. They cover Q3 revenue, tier breakdown, churn, and incident details, but not the marketing budget.",
+      "error": null,
+      "sources": [
+        "finance:0",
+        "finance:1",
+        "retro:0",
+        "finance:2",
+        "data:0",
+        "retro:1"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-laptop-model",
+      "sample": 0,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "Which laptop model do new engineers get?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "Which laptop model do new engineers get?",
+      "answer": "I couldn't find that in your documents. The sources mention laptop replacement every three years but do not specify a model.",
+      "error": null,
+      "sources": [
+        "wifi:0",
+        "architecture:0",
+        "onboarding:0",
+        "runbook:0",
+        "onboarding:4",
+        "finance:4"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-laptop-model",
+      "sample": 1,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "Which laptop model do new engineers get?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "Which laptop model do new engineers get?",
+      "answer": "I couldn't find that in your documents. The sources mention that laptops are replaced every three years, but they do not specify a particular model.",
+      "error": null,
+      "sources": [
+        "wifi:0",
+        "architecture:0",
+        "onboarding:0",
+        "runbook:0",
+        "onboarding:4",
+        "finance:4"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-laptop-model",
+      "sample": 2,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "Which laptop model do new engineers get?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "Which laptop model do new engineers get?",
+      "answer": "I couldn't find that in your documents. They cover laptop replacement schedules and onboarding steps, but not the specific model.",
+      "error": null,
+      "sources": [
+        "wifi:0",
+        "architecture:0",
+        "onboarding:0",
+        "runbook:0",
+        "onboarding:4",
+        "finance:4"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-laptop-model",
+      "sample": 3,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "Which laptop model do new engineers get?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "Which laptop model do new engineers get?",
+      "answer": "I couldn't find that in your documents. The sources mention that laptops are replaced every three years, but they do not specify a particular model.",
+      "error": null,
+      "sources": [
+        "wifi:0",
+        "architecture:0",
+        "onboarding:0",
+        "runbook:0",
+        "onboarding:4",
+        "finance:4"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-outage-customers",
+      "sample": 0,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "How many customers were affected by the search outage?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "How many customers were affected by the search outage?",
+      "answer": "I couldn't find that in your documents. The sources describe the outage duration but do not state how many customers were affected.",
+      "error": null,
+      "sources": [
+        "retro:0",
+        "data:0",
+        "finance:1",
+        "support:0",
+        "finance:0",
+        "architecture:2"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-outage-customers",
+      "sample": 1,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "How many customers were affected by the search outage?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "How many customers were affected by the search outage?",
+      "answer": "I couldn't find that in your documents. The sources describe the outage duration and general process details, but they do not specify how many customers were affected.",
+      "error": null,
+      "sources": [
+        "retro:0",
+        "data:0",
+        "finance:1",
+        "support:0",
+        "finance:0",
+        "architecture:2"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-outage-customers",
+      "sample": 2,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "How many customers were affected by the search outage?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "How many customers were affected by the search outage?",
+      "answer": "I couldn't find that in your documents. The documents cover the duration of the outage and the process details.",
+      "error": null,
+      "sources": [
+        "retro:0",
+        "data:0",
+        "finance:1",
+        "support:0",
+        "finance:0",
+        "architecture:2"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-outage-customers",
+      "sample": 3,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "How many customers were affected by the search outage?",
+      "pass": true,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "How many customers were affected by the search outage?",
+      "answer": "I couldn't find that in your documents. The documents mention the outage lasted about 47 minutes.",
+      "error": null,
+      "sources": [
+        "retro:0",
+        "data:0",
+        "finance:1",
+        "support:0",
+        "finance:0",
+        "architecture:2"
+      ],
+      "failed": [],
+      "judged": null
+    },
+    {
+      "id": "near-manager-refund",
+      "sample": 0,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "What is the maximum refund a manager can approve?",
+      "pass": false,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "What is the maximum refund a manager can approve?",
+      "answer": "A manager can approve any refund that exceeds $500 — the policy states that refunds up to $500 can be approved without a manager, implying that amounts above that require managerial approval. No upper limit is specified in the documents. [1]",
+      "error": null,
+      "sources": [
+        "support:2",
+        "data:0",
+        "finance:0",
+        "expenses:0",
+        "finance:1",
+        "finance:3"
+      ],
+      "failed": [
+        {
+          "name": "refuses",
+          "pass": false,
+          "detail": "answered instead of refusing"
+        }
+      ],
+      "judged": null
+    },
+    {
+      "id": "near-manager-refund",
+      "sample": 1,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "What is the maximum refund a manager can approve?",
+      "pass": false,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "What is the maximum refund a manager can approve?",
+      "answer": "The policy states that refunds up to $500 can be approved without a manager. In other words, the maximum refund that can be handled without managerial approval is $500. [1]",
+      "error": null,
+      "sources": [
+        "support:2",
+        "data:0",
+        "finance:0",
+        "expenses:0",
+        "finance:1",
+        "finance:3"
+      ],
+      "failed": [
+        {
+          "name": "refuses",
+          "pass": false,
+          "detail": "answered instead of refusing"
+        }
+      ],
+      "judged": null
+    },
+    {
+      "id": "near-manager-refund",
+      "sample": 2,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "What is the maximum refund a manager can approve?",
+      "pass": false,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "What is the maximum refund a manager can approve?",
+      "answer": "The documents do not set an upper limit for refunds that a manager can approve. They only state that refunds up to $500 can be approved without a manager, implying that amounts above that would require manager approval. [1]",
+      "error": null,
+      "sources": [
+        "support:2",
+        "data:0",
+        "finance:0",
+        "expenses:0",
+        "finance:1",
+        "finance:3"
+      ],
+      "failed": [
+        {
+          "name": "refuses",
+          "pass": false,
+          "detail": "answered instead of refusing"
+        }
+      ],
+      "judged": null
+    },
+    {
+      "id": "near-manager-refund",
+      "sample": 3,
+      "split": "dev",
+      "category": "near_miss",
+      "question": "What is the maximum refund a manager can approve?",
+      "pass": false,
+      "skipped": false,
+      "gated": false,
+      "searchQuery": "What is the maximum refund a manager can approve?",
+      "answer": "Refunds up to $500 can be approved without a manager, meaning any refund above that amount requires manager approval. The documents do not specify an upper limit on what a manager can approve. [1]",
+      "error": null,
+      "sources": [
+        "support:2",
+        "data:0",
+        "finance:0",
+        "expenses:0",
+        "finance:1",
+        "finance:3"
+      ],
+      "failed": [
+        {
+          "name": "refuses",
+          "pass": false,
+          "detail": "answered instead of refusing"
+        }
+      ],
+      "judged": null
+    }
+  ]
+}
