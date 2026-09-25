@@ -39,6 +39,5 @@ next-env.d.ts
 .vscode/*
 !.vscode/extensions.json
 
-# Local review notes, not part of the submission
-REVIEW.md
-role-description.md
+# Personal working notes, kept out of the repository
+_private/

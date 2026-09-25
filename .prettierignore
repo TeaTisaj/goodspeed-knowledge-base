@@ -6,9 +6,7 @@ coverage
 pnpm-lock.yaml
 supabase/.temp
 
-# Working notes, not part of the deliverable
-REVIEW.md
-role-description.md
+_private/
 
 # machine-written eval output, kept byte-for-byte as the run produced it
 eval/results/
