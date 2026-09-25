@@ -18,8 +18,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4">
-      <header className="flex flex-wrap items-center gap-4 border-b py-4">
-        <Link href="/documents" className="text-sm font-semibold">
+      <header className="flex items-center gap-2 border-b py-4 sm:gap-4">
+        <Link href="/documents" className="hidden text-sm font-semibold sm:inline">
           Knowledge Base
         </Link>
         <nav className="flex gap-1">
@@ -27,7 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               key={t.href}
               href={t.href}
-              className={`rounded-md px-3 py-1.5 text-sm transition ${
+              className={`rounded-md px-2 py-1.5 text-sm transition sm:px-3 ${
                 pathname.startsWith(t.href)
                   ? 'bg-[var(--color-surface-muted)] font-medium'
                   : 'text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-muted)]'

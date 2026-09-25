@@ -178,12 +178,12 @@ export default function ChatPage() {
         <Button variant="secondary" onClick={startNew}>
           New conversation
         </Button>
-        <div className="flex flex-col gap-1">
+        <div className="flex max-h-32 flex-col gap-1 overflow-y-auto lg:max-h-none">
           {conversations.map((c) => (
             <button
               key={c.id}
               onClick={() => void openConversation(c.id)}
-              className={`truncate rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-[var(--color-surface-muted)] ${
+              className={`shrink-0 truncate rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-[var(--color-surface-muted)] ${
                 c.id === conversationId ? 'bg-[var(--color-surface-muted)] font-medium' : ''
               }`}
             >
@@ -193,7 +193,7 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      <section className="flex min-h-[60vh] flex-1 flex-col gap-3">
+      <section className="flex min-h-[calc(100vh-10rem)] flex-1 flex-col gap-3">
         {turns.length === 0 ? (
           <EmptyState
             title="Ask about your documents"
@@ -221,7 +221,22 @@ export default function ChatPage() {
                   {turn.role === 'user' ? (
                     turn.content
                   ) : turn.content ? (
-                    <Markdown text={turn.content} />
+                    <Markdown
+                      text={turn.content}
+                      renderCitation={(n, key) => {
+                        const c = turn.citations.find((x) => x.number === n);
+                        return c ? (
+                          <button
+                            key={key}
+                            onClick={() => setOpenCitation(c)}
+                            title={c.documentTitle}
+                            className="mx-0.5 rounded border px-1 align-super text-[0.7em] font-medium text-[var(--color-accent)] transition hover:bg-[var(--color-surface-muted)]"
+                          >
+                            {n}
+                          </button>
+                        ) : null;
+                      }}
+                    />
                   ) : (
                     !turn.streaming && '(no answer)'
                   )}
@@ -265,7 +280,10 @@ export default function ChatPage() {
         {stage && <Spinner label={STAGE_LABEL[stage] ?? 'Working...'} />}
         {error && <ErrorBanner message={error} />}
 
-        <form onSubmit={ask} className="mt-auto flex gap-2 pt-2">
+        <form
+          onSubmit={ask}
+          className="sticky bottom-0 mt-auto flex gap-2 bg-[var(--color-surface)] pt-2 pb-4"
+        >
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}

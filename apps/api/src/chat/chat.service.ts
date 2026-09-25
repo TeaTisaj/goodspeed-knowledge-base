@@ -14,6 +14,7 @@ import {
   buildCondensePrompt,
   buildHypotheticalAnswerPrompt,
   calibratedRelevanceFloor,
+  citationQuote,
   CONDENSE_MAX_TOKENS,
   countTokens,
   detectInjectionSignals,
@@ -428,7 +429,7 @@ export class ChatService {
       chunkId: c.id,
       documentId: c.documentId,
       documentTitle: c.documentTitle,
-      quote: c.content.slice(0, 300),
+      quote: citationQuote(c.content),
     }));
   }
 

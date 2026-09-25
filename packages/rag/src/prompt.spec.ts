@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCondensePrompt,
   buildPrompt,
+  citationQuote,
   extractCitationNumbers,
   resolveCitations,
   type RetrievedChunk,
@@ -145,5 +146,28 @@ describe('buildCondensePrompt', () => {
 
   it('asks for the question only, so the output can be embedded directly', () => {
     expect(buildCondensePrompt([], 'x')).toMatch(/Output only the question/);
+  });
+});
+
+describe('citationQuote', () => {
+  it('drops markdown syntax and hard wraps but keeps paragraphs', () => {
+    const chunk =
+      '# Engineering onboarding\n\n## First day\nSign in with the\ncredentials, then run `make bootstrap`.';
+    expect(citationQuote(chunk)).toBe(
+      'Engineering onboarding\nFirst day\nSign in with the credentials, then run make bootstrap.',
+    );
+  });
+
+  it('cuts a long chunk at a word boundary with an ellipsis', () => {
+    const quote = citationQuote('alpha beta gamma delta epsilon', 20);
+    expect(quote).toBe('alpha beta gamma…');
+  });
+
+  it('puts each list item on its own line', () => {
+    expect(citationQuote('Steps:\n- build\n- deploy')).toBe('Steps:\n• build\n• deploy');
+  });
+
+  it('returns a short chunk unchanged', () => {
+    expect(citationQuote('Rollback takes eight minutes.')).toBe('Rollback takes eight minutes.');
   });
 });

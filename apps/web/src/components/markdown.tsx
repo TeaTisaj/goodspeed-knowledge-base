@@ -20,11 +20,16 @@
 
 import type { ReactNode } from 'react';
 
-/** `**bold**`, `*italic*`, `` `code` `` — applied to already-escaped text. */
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
+/** Renders citation `n`, or returns null to leave the marker as text. */
+export type RenderCitation = (n: number, key: string) => ReactNode | null;
+
+/** `**bold**`, `*italic*`, `` `code` ``, `[n]` — applied to already-escaped text. */
+function renderInline(text: string, keyPrefix: string, cite?: RenderCitation): ReactNode[] {
   const nodes: ReactNode[] = [];
   // One pass, alternating between the delimiters so nesting cannot desync.
-  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
+  // Citation brackets match the server's parser, including gpt-oss's 【n】.
+  const pattern =
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|((?:\[|\u3010|\uFF3B)\s*(\d{1,2})\s*(?:\]|\u3011|\uFF3D))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let i = 0;
@@ -34,7 +39,11 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     const token = match[0];
     const key = `${keyPrefix}-i${i++}`;
 
-    if (token.startsWith('`')) {
+    const citation = match[5] && cite ? cite(Number(match[5]), key) : null;
+
+    if (match[4]) {
+      nodes.push(citation ?? token);
+    } else if (token.startsWith('`')) {
       nodes.push(
         <code
           key={key}
@@ -55,7 +64,14 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
-export function Markdown({ text }: { text: string }) {
+export function Markdown({
+  text,
+  renderCitation,
+}: {
+  text: string;
+  renderCitation?: RenderCitation;
+}) {
+  const inline = (t: string, k: string) => renderInline(t, k, renderCitation);
   const lines = text.split('\n');
   const blocks: ReactNode[] = [];
 
@@ -68,7 +84,7 @@ export function Markdown({ text }: { text: string }) {
     if (listItems.length === 0) return;
     const items = listItems.map((item, i) => (
       <li key={i} className="ml-4 list-outside">
-        {renderInline(item, `li-${key}-${i}`)}
+        {inline(item, `li-${key}-${i}`)}
       </li>
     ));
     blocks.push(
@@ -126,7 +142,7 @@ export function Markdown({ text }: { text: string }) {
     if (heading) {
       blocks.push(
         <p key={`b${key++}`} className="font-semibold">
-          {renderInline(heading[2] as string, `h${key}`)}
+          {inline(heading[2] as string, `h${key}`)}
         </p>,
       );
       continue;
@@ -139,7 +155,7 @@ export function Markdown({ text }: { text: string }) {
     }
     blocks.push(
       <p key={`b${key++}`} className="leading-relaxed">
-        {renderInline(line, `p${key}`)}
+        {inline(line, `p${key}`)}
       </p>,
     );
   }

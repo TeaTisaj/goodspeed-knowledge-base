@@ -232,9 +232,52 @@ export function resolveCitations(answer: string, used: RetrievedChunk[]): Resolv
         chunkId: chunk.id,
         documentId: chunk.documentId,
         documentTitle: chunk.documentTitle,
-        quote: chunk.content.slice(0, 300),
+        quote: citationQuote(chunk.content),
       };
     });
+}
+
+/** Longest quote shown for a citation; a chunk is up to ~2,000 characters. */
+export const MAX_QUOTE_CHARS = 400;
+
+/**
+ * A readable excerpt of a chunk for the citation card: markdown syntax and
+ * hard wraps removed, cut at a word boundary rather than mid-word.
+ */
+export function citationQuote(content: string, maxChars = MAX_QUOTE_CHARS): string {
+  // Headings and blank lines end a block; other lines are hard wraps and join.
+  const blocks: string[] = [];
+  let current: string[] = [];
+  const flush = () => {
+    if (current.length > 0) blocks.push(current.join(' '));
+    current = [];
+  };
+  for (const raw of content.split('\n')) {
+    const line = raw
+      .trim()
+      .replace(/^[-*+]\s+/, '• ')
+      .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, '$1$2')
+      .replace(/`([^`]+)`/g, '$1');
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    if (heading) {
+      flush();
+      blocks.push(heading[1]!);
+    } else if (line === '') {
+      flush();
+    } else if (line.startsWith('• ')) {
+      flush();
+      current.push(line);
+    } else {
+      current.push(line);
+    }
+  }
+  flush();
+  const text = blocks.join('\n');
+
+  if (text.length <= maxChars) return text;
+  const cut = text.slice(0, maxChars);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > maxChars * 0.6 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.]+$/, '')}…`;
 }
 
 /**

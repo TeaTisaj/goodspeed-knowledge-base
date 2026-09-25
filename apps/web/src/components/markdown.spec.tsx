@@ -47,4 +47,20 @@ describe('Markdown rendering of model output', () => {
     expect(out).toContain('<strong>Eight minutes</strong>');
     expect(out).toMatch(/<ul[^>]*>.*<li/);
   });
+
+  it('hands citation markers to the renderer, in either bracket style', () => {
+    const out = renderToStaticMarkup(
+      <Markdown
+        text={'Rollback takes eight minutes [1] and needs sign-off \u30102\u3011.'}
+        renderCitation={(n, key) => <button key={key}>cite-{n}</button>}
+      />,
+    );
+    expect(out).toContain('<button>cite-1</button>');
+    expect(out).toContain('<button>cite-2</button>');
+  });
+
+  it('leaves a marker as text when the renderer declines it', () => {
+    const out = renderToStaticMarkup(<Markdown text="See [7]." renderCitation={() => null} />);
+    expect(out).toContain('See [7].');
+  });
 });
