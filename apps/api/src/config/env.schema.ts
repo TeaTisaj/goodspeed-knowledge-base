@@ -103,7 +103,17 @@ export const envSchema = z
           'by also setting AI_CHAT_BASE_URL to its /v1 endpoint.',
       });
     }
-    if (!resolvable(e.AI_EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS, e.AI_EMBEDDING_BASE_URL)) {
+    const chatOnly = CHAT_PRESETS[e.AI_EMBEDDING_PROVIDER as keyof typeof CHAT_PRESETS];
+    if (chatOnly && !chatOnly.embeddings) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AI_EMBEDDING_PROVIDER'],
+        message:
+          `"${e.AI_EMBEDDING_PROVIDER}" has no embeddings endpoint. Keep it for chat ` +
+          `(AI_CHAT_PROVIDER=${e.AI_EMBEDDING_PROVIDER}) and pair it with an embedding provider: ` +
+          `${EMBEDDING_PROVIDERS.join(', ')}.`,
+      });
+    } else if (!resolvable(e.AI_EMBEDDING_PROVIDER, EMBEDDING_PROVIDERS, e.AI_EMBEDDING_BASE_URL)) {
       ctx.addIssue({
         code: 'custom',
         path: ['AI_EMBEDDING_PROVIDER'],

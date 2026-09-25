@@ -100,7 +100,7 @@ describe('parseEnv', () => {
   it('rejects groq as an embedding provider: it has no embeddings endpoint', () => {
     expect(() =>
       parseEnv({ ...valid, AI_EMBEDDING_PROVIDER: 'groq' } as NodeJS.ProcessEnv),
-    ).toThrow(/AI_EMBEDDING_PROVIDER/);
+    ).toThrow(/"groq" has no embeddings endpoint.*AI_CHAT_PROVIDER=groq/s);
   });
 
   it('rejects a non-postgres DATABASE_URL', () => {
