@@ -32,21 +32,18 @@ test('sign up, create a document, ingest it, and get a cited answer', async ({ p
 
   // --- create a document --------------------------------------------------
   await page
-    .getByRole('button', { name: /new document/i })
+    .getByRole('link', { name: /new document/i })
     .first()
     .click();
-  await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/documents\/new$/);
 
   await page.getByLabel('Title').fill('Deployment runbook');
   await page.getByLabel(/^Tags/).fill('ops');
   await page.getByLabel(/^Content/).fill(DOC);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}/, { timeout: 30_000 });
 
   // --- ingestion completes without a reload -------------------------------
-  // Asserted on the chunk count, not on "Ready" or /chunks? indexed/. Creating
-  // a document produces an empty one, which ingests to `ready` with 0 chunks --
-  // so both of those already match *before* the save, and the test would race
-  // ahead and ask its question against an unindexed document.
   await expect(page.getByText(/\b1 chunk indexed\b/)).toBeVisible({ timeout: 45_000 });
 
   // --- ask a question -----------------------------------------------------

@@ -4,14 +4,7 @@ import type { DocumentSummary } from '@kb/contracts';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '@/lib/api';
-import {
-  Button,
-  EmptyState,
-  ErrorBanner,
-  SkeletonRow,
-  StatusBadge,
-  SuccessBanner,
-} from '@/components/ui';
+import { EmptyState, ErrorBanner, SkeletonRow, StatusBadge, SuccessBanner } from '@/components/ui';
 import { UploadButton } from '@/components/upload-button';
 
 export default function DocumentsPage() {
@@ -19,7 +12,6 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tag, setTag] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -54,21 +46,6 @@ export default function DocumentsPage() {
     };
   }, [docs, load]);
 
-  async function createDraft() {
-    setCreating(true);
-    try {
-      const doc = await api.createDocument({
-        title: 'Untitled document',
-        content: '',
-        tags: [],
-      });
-      window.location.href = `/documents/${doc.id}`;
-    } catch (e) {
-      setError(e instanceof ApiError ? e.problem.title : 'Could not create document');
-      setCreating(false);
-    }
-  }
-
   const allTags = [...new Set((docs ?? []).flatMap((d) => d.tags))].sort();
 
   return (
@@ -95,9 +72,12 @@ export default function DocumentsPage() {
               setError(message);
             }}
           />
-          <Button onClick={createDraft} disabled={creating}>
-            {creating ? 'Creating...' : 'New document'}
-          </Button>
+          <Link
+            href="/documents/new"
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90"
+          >
+            New document
+          </Link>
         </div>
       </div>
 
@@ -143,7 +123,14 @@ export default function DocumentsPage() {
               ? 'Try clearing the filter, or add this tag to a document.'
               : 'Create a document or upload a PDF. It is chunked and embedded automatically so you can ask questions about it.'
           }
-          action={<Button onClick={createDraft}>New document</Button>}
+          action={
+            <Link
+              href="/documents/new"
+              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90"
+            >
+              New document
+            </Link>
+          }
         />
       ) : (
         <ul className="flex flex-col gap-2">

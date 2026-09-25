@@ -17,18 +17,23 @@ import {
  * they get real tests.
  */
 describe('createDocumentSchema', () => {
-  it('accepts a minimal document and defaults the rest', () => {
-    const r = createDocumentSchema.parse({ title: 'Notes' });
-    expect(r).toEqual({ title: 'Notes', content: '', tags: [] });
+  it('accepts a minimal document and defaults the tags', () => {
+    const r = createDocumentSchema.parse({ title: 'Notes', content: 'Hello' });
+    expect(r).toEqual({ title: 'Notes', content: 'Hello', tags: [] });
+  });
+
+  it('rejects missing or blank content, which would index to nothing', () => {
+    expect(createDocumentSchema.safeParse({ title: 'Notes' }).success).toBe(false);
+    expect(createDocumentSchema.safeParse({ title: 'Notes', content: ' \n ' }).success).toBe(false);
   });
 
   it('trims the title, so whitespace cannot masquerade as a value', () => {
-    expect(createDocumentSchema.parse({ title: '  Notes  ' }).title).toBe('Notes');
+    expect(createDocumentSchema.parse({ title: '  Notes  ', content: 'x' }).title).toBe('Notes');
   });
 
   it('rejects an empty or whitespace-only title', () => {
-    expect(createDocumentSchema.safeParse({ title: '' }).success).toBe(false);
-    expect(createDocumentSchema.safeParse({ title: '   ' }).success).toBe(false);
+    expect(createDocumentSchema.safeParse({ title: '', content: 'x' }).success).toBe(false);
+    expect(createDocumentSchema.safeParse({ title: '   ', content: 'x' }).success).toBe(false);
   });
 
   it('caps content at 1MB, so one request cannot exhaust the embedding budget', () => {
@@ -39,7 +44,7 @@ describe('createDocumentSchema', () => {
 
   it('caps the number of tags', () => {
     const tags = Array.from({ length: 21 }, (_, i) => `t${i}`);
-    expect(createDocumentSchema.safeParse({ title: 'x', tags }).success).toBe(false);
+    expect(createDocumentSchema.safeParse({ title: 'x', content: 'x', tags }).success).toBe(false);
   });
 });
 
@@ -52,9 +57,8 @@ describe('updateDocumentSchema', () => {
     expect(updateDocumentSchema.safeParse({ title: 'New' }).success).toBe(true);
   });
 
-  it('allows clearing content to an empty string', () => {
-    // Distinct from omitting it: one empties the document, the other leaves it.
-    expect(updateDocumentSchema.safeParse({ content: '' }).success).toBe(true);
+  it('rejects blanking the content; deleting the document is the way to empty it', () => {
+    expect(updateDocumentSchema.safeParse({ content: '' }).success).toBe(false);
   });
 });
 

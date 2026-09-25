@@ -17,6 +17,11 @@ export const ingestionStatusSchema = z.enum(['queued', 'processing', 'ready', 'f
 export type IngestionStatus = z.infer<typeof ingestionStatusSchema>;
 
 const titleSchema = z.string().trim().min(1, 'Title is required').max(500);
+/** Blank content would ingest to "Ready" with nothing searchable; delete the document instead. */
+const contentSchema = z
+  .string()
+  .max(1_000_000, 'Document is too large (1MB limit)')
+  .refine((s) => s.trim().length > 0, 'Add some content before saving');
 const tagsArray = z.array(z.string().trim().min(1).max(50)).max(20, 'At most 20 tags');
 
 /** Create defaults to no tags; update must not, or an empty PATCH clears them. */
@@ -24,7 +29,7 @@ const tagsSchema = tagsArray.default([]);
 
 export const createDocumentSchema = z.object({
   title: titleSchema,
-  content: z.string().max(1_000_000, 'Document is too large (1MB limit)').default(''),
+  content: contentSchema,
   tags: tagsSchema,
 });
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
@@ -32,7 +37,7 @@ export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export const updateDocumentSchema = z
   .object({
     title: titleSchema.optional(),
-    content: z.string().max(1_000_000).optional(),
+    content: contentSchema.optional(),
     // Deliberately `tagsArray`, not `tagsSchema`: a defaulted field is always
     // present after parsing, so `{}` would satisfy the "some field" check below
     // and then write an empty array, silently clearing the document's tags.

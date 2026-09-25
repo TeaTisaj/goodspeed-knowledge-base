@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '@/lib/api';
 import { Button, ErrorBanner, Spinner, StatusBadge } from '@/components/ui';
+import { DocumentForm, parseTags, type DocumentFields } from '@/components/document-form';
 
 export default function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
   // Next 16: params is a Promise.
@@ -12,9 +13,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   const router = useRouter();
 
   const [doc, setDoc] = useState<Document | null>(null);
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [tagsText, setTagsText] = useState('');
+  const [fields, setFields] = useState<DocumentFields | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [saving, setSaving] = useState(false);
@@ -27,9 +26,9 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
       setDoc(d);
       // Only seed the editor on first load, so polling cannot clobber edits in
       // progress.
-      setTitle((prev) => (prev === '' ? d.title : prev));
-      setContent((prev) => (prev === '' ? d.content : prev));
-      setTagsText((prev) => (prev === '' ? d.tags.join(', ') : prev));
+      setFields(
+        (prev) => prev ?? { title: d.title, content: d.content, tagsText: d.tags.join(', ') },
+      );
       setError(null);
       return d;
     } catch (e) {
@@ -53,20 +52,21 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
 
   const dirty =
     doc !== null &&
-    (title !== doc.title || content !== doc.content || tagsText !== doc.tags.join(', '));
+    fields !== null &&
+    (fields.title !== doc.title ||
+      fields.content !== doc.content ||
+      fields.tagsText !== doc.tags.join(', '));
 
   async function save() {
+    if (!fields) return;
     setSaving(true);
     setError(null);
     setFieldErrors({});
     try {
       const updated = await api.updateDocument(id, {
-        title,
-        content,
-        tags: tagsText
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean),
+        title: fields.title,
+        content: fields.content,
+        tags: parseTags(fields.tagsText),
       });
       setDoc(updated);
       setSavedAt(Date.now());
@@ -128,45 +128,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
         </p>
       )}
 
-      <label className="flex flex-col gap-1 text-sm">
-        Title
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="rounded-md border bg-transparent px-3 py-2 text-sm"
-        />
-        {fieldErrors.title?.map((m) => (
-          <span key={m} className="text-xs text-[var(--color-danger)]">
-            {m}
-          </span>
-        ))}
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Tags <span className="text-xs text-[var(--color-ink-muted)]">comma separated</span>
-        <input
-          value={tagsText}
-          onChange={(e) => setTagsText(e.target.value)}
-          placeholder="ops, finance"
-          className="rounded-md border bg-transparent px-3 py-2 text-sm"
-        />
-      </label>
-
-      <label className="flex flex-col gap-1 text-sm">
-        Content{' '}
-        <span className="text-xs text-[var(--color-ink-muted)]">markdown or plain text</span>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={20}
-          className="rounded-md border bg-transparent px-3 py-2 font-mono text-sm leading-relaxed"
-        />
-        {fieldErrors.content?.map((m) => (
-          <span key={m} className="text-xs text-[var(--color-danger)]">
-            {m}
-          </span>
-        ))}
-      </label>
+      {fields && <DocumentForm fields={fields} onChange={setFields} fieldErrors={fieldErrors} />}
     </div>
   );
 }
