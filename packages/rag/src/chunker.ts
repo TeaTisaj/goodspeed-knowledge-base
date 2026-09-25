@@ -1,23 +1,13 @@
 import { encode } from 'gpt-tokenizer';
 
 /**
- * Recursive, structure-aware chunking.
+ * Recursive, structure-aware chunking: ~512 tokens, 64 overlap, split on the
+ * strongest boundary available (headings, paragraphs, sentences, words), so a
+ * chunk stays self-contained enough to answer a question on its own.
  *
- * ~512 tokens with ~12.5% overlap is the consensus default, and it needs zero
- * model calls. The published evidence for alternatives is genuinely
- * contradictory — some sources put semantic chunking 15-25% ahead, Chroma's
- * benchmark puts the gap at 2-6 points for 3-5x the compute, and one 2026
- * analysis found overlap gave no measurable benefit at all. That disagreement
- * is why the eval harness exists: these numbers are configurable and measured
- * against our own corpus rather than taken on faith.
- *
- * `maxTokens` bounds the whole emitted chunk, overlap included, so the number
- * in the config is the number that reaches the prompt.
- *
- * Splitting is recursive on a separator hierarchy, strongest boundary first:
- * headings, then paragraphs, then sentences, then words, then characters. The
- * point is that a chunk boundary should fall where a human would see a break,
- * so a chunk stays self-contained enough to answer a question on its own.
+ * 512/64 is the common default and needs no model calls; semantic chunking's
+ * published gains are small and contested. The sizes are configurable and
+ * measured against our corpus by `pnpm eval`.
  */
 
 export interface ChunkOptions {
@@ -46,24 +36,13 @@ export function countTokens(text: string): number {
   return encode(text).length;
 }
 
-/**
- * Normalises text before chunking.
- *
- * Deliberately conservative: it fixes line endings, strips zero-width and
- * control characters that break tokenisation, and collapses runs of blank
- * lines. It does *not* touch markdown structure, because those characters are
- * the separators the splitter relies on.
- */
-/**
- * Zero-width and BOM characters. Built from codepoints rather than written
- * literally: a literal here is an invisible byte in the source, which is
- * exactly the hazard this strips from user text.
- */
+/** Zero-width and BOM characters, built from code points so the source has no invisible bytes. */
 const ZERO_WIDTH = new RegExp(
   `[${String.fromCharCode(0x200b)}-${String.fromCharCode(0x200d)}${String.fromCharCode(0xfeff)}]`,
   'g',
 );
 
+/** Normalises line endings and strips control characters; leaves markdown structure intact. */
 export function cleanText(raw: string): string {
   return (
     raw
@@ -142,12 +121,7 @@ export function chunkText(raw: string, options: ChunkOptions = {}): Chunk[] {
   const text = cleanText(raw);
   if (text.length === 0) return [];
 
-  // `maxTokens` is a ceiling on the emitted chunk, overlap included. Packing
-  // bodies to the full ceiling and then prepending the overlap produced chunks
-  // up to `maxTokens + overlapTokens`, so a "512-token chunk" was really up to
-  // 576 -- which made the configured number mean something other than what it
-  // says, and quietly understated how much of the prompt budget each source
-  // consumed. The room for the overlap is reserved up front instead.
+  // `maxTokens` includes the overlap, so reserve room for it up front.
   const bodyTokens = Math.max(1, opts.maxTokens - opts.overlapTokens);
 
   const pieces = breakDown(text, bodyTokens);

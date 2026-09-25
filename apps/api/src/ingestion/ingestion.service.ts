@@ -14,12 +14,8 @@ export interface IngestionOutcome {
 }
 
 /**
- * Turns a document into retrievable chunks.
- *
- * Runs in the worker with the service-role client, because it writes chunks on
- * a user's behalf outside any request. Ownership is therefore enforced in code
- * here: `owner_id` is copied from the document row and never taken from job
- * input, so a forged job cannot write chunks into someone else's namespace.
+ * Turns a document into retrievable chunks. Runs with the service role, so
+ * `owner_id` always comes from the document row, never from job input.
  */
 @Injectable()
 export class IngestionService {
@@ -38,20 +34,11 @@ export class IngestionService {
     const cleaned = cleanText(doc.content);
     const docHash = contentHash(cleaned);
 
-    // Nothing changed: skip before doing any chunking work at all. This is what
-    // makes duplicate jobs cheap, and therefore what lets the queue stay free of
-    // a debounce that could drop an update.
+    // Unchanged content: skip all chunking and embedding.
     if (doc.content_hash === docHash && doc.chunk_count > 0) {
-      // Tags still have to land. They are denormalised onto the chunks so the
-      // search functions can filter without a join, and a tags-only edit leaves
-      // the content hash untouched -- so without this the chunks keep the old
-      // tags and the document stops matching a search filtered by its own tag.
+      // A tags-only edit leaves the hash unchanged, but chunks carry the tags for filtering.
       await this.syncTags(db, doc);
-      // Every update parks the document in `queued`, and this early return is
-      // the only path that then does no work -- so it is the only place that can
-      // clear it. Without this a re-saved document stays fully indexed and
-      // searchable while the UI shows "Queued" forever, which is indistinguishable
-      // from a worker that never picked the job up.
+      // Every update sets `queued`; this path must clear it too.
       if (doc.status !== 'ready') {
         await db
           .from('documents')
@@ -120,12 +107,7 @@ export class IngestionService {
       await db.from('chunks').delete().in('id', diff.deletedIds);
     }
 
-    // Reindex kept rows before inserting, so the new rows do not collide with
-    // positions the survivors still occupy. One round trip for the whole
-    // document, and atomic: the loop this replaced issued two PostgREST calls
-    // per moved chunk, each committing separately, so a crash partway left
-    // rows stranded at the negative indexes used to dodge the unique
-    // constraint.
+    // Renumber kept rows first, in one atomic call, so new rows do not collide.
     if (diff.unchanged.length > 0) {
       const { error: reindexError } = await db.rpc('reindex_chunks', {
         p_document_id: doc.id,

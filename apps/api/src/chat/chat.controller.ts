@@ -25,22 +25,8 @@ export class ChatController {
   ) {}
 
   /**
-   * Streams an answer as Server-Sent Events.
-   *
-   * Uses the raw response rather than Nest's `@Sse()` decorator because the
-   * handler needs explicit control over headers and flushing. Three details
-   * decide whether streaming actually works in production:
-   *
-   *  - `X-Accel-Buffering: no` stops nginx buffering the whole response. Without
-   *    it the stream arrives as one blob at the end, which looks fine in dev
-   *    and breaks behind a proxy.
-   *  - Compression must not apply to this route: gzip holds small token deltas
-   *    in its buffer until the response ends.
-   *  - `flushHeaders()` sends headers immediately, so the client opens the
-   *    stream instead of waiting for the first token.
-   *
-   * Errors after the first byte are emitted as an SSE `error` event -- the
-   * status code is long gone by then.
+   * Streams an answer as SSE on the raw response: `X-Accel-Buffering: no` for
+   * proxies, no compression, and headers flushed immediately.
    */
   @Post('ask')
   // Chat is far more expensive than CRUD, so it gets its own tighter bucket.

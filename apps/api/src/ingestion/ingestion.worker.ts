@@ -9,11 +9,8 @@ import { INGEST_QUEUE, QueueService, type IngestJobData } from './queue.service.
 import { isWorkerProcess } from './worker-process.js';
 
 /**
- * Subscribes to the ingest queue.
- *
- * Runs in-process by default so local setup is one command, and as its own
- * process when WORKER_MODE=standalone. Same code either way — the scaling story
- * is a deployment topology change, not a rewrite.
+ * Subscribes to the ingest queue: in-process by default, or its own process
+ * with WORKER_MODE=standalone. Same code either way.
  */
 @Injectable()
 export class IngestionWorker implements OnModuleInit {
@@ -28,16 +25,7 @@ export class IngestionWorker implements OnModuleInit {
     private readonly usage: UsageService,
   ) {}
 
-  /**
-   * Whether *this process* should consume jobs.
-   *
-   *   inline      -> yes. One process does everything; one command locally.
-   *   standalone  -> only in the dedicated worker process. The API enqueues
-   *                  but does not consume, which is the entire point of the
-   *                  mode: without this check, setting `standalone` produced a
-   *                  second worker rather than moving the first one.
-   *   off         -> never.
-   */
+  /** inline: this process consumes. standalone: only the worker process does. off: nothing does. */
   private get shouldConsume(): boolean {
     const mode = this.config.env.WORKER_MODE;
     if (mode === 'off') return false;
@@ -70,16 +58,8 @@ export class IngestionWorker implements OnModuleInit {
   }
 
   /**
-   * Enqueues any document still sitting in `queued` on startup.
-   *
-   * A document reaches `queued` from three places: the API (which enqueues a
-   * job), the seed script (which does not), and a crash between the database
-   * write and the enqueue. Without this, seeded documents are never ingested
-   * and a reviewer sees an empty knowledge base with no error anywhere --
-   * which is exactly what happened before this existed.
-   *
-   * Safe to run on every boot because ingestion is idempotent: a document whose
-   * content hash is unchanged short-circuits before any work.
+   * Enqueues anything left in `queued` at startup (seeded documents, or a crash
+   * between write and enqueue). Safe on every boot: unchanged content is skipped.
    */
   private async reconcile(): Promise<void> {
     try {

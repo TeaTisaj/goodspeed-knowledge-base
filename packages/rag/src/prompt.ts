@@ -1,18 +1,10 @@
 /**
  * Prompt construction and citation handling.
  *
- * Retrieved chunks are numbered, and the model is told to cite those numbers.
- * Numbering rather than passing ids keeps the prompt small and gives the model
- * a token it can reliably reproduce; the mapping back to real chunk and
- * document ids stays on the server, so a hallucinated citation number resolves
- * to nothing instead of to the wrong document.
- *
- * **Where each part goes is a security decision.** The system message holds the
- * rules and nothing else. Retrieved text is document content -- often content
- * the user did not write -- so it travels in the user turn, inside tags it
- * cannot forge (see untrusted.ts). An earlier version appended sources to the
- * system message, which handed any sentence in any uploaded PDF the highest
- * authority in the request.
+ * Sources are numbered and the model cites numbers; the mapping back to chunk
+ * ids stays on the server, so an invented number resolves to nothing. The
+ * system message holds only rules -- retrieved text goes in the user turn,
+ * inside tags it cannot forge (untrusted.ts).
  */
 import { NO_ANSWER } from '@kb/contracts';
 import { neutraliseAttribute, neutraliseUntrusted } from './untrusted.js';
@@ -23,11 +15,7 @@ export interface RetrievedChunk {
   documentTitle: string;
   content: string;
   score: number;
-  /**
-   * Cosine similarity to the query, 0..1. The fused `score` is rank-based and
-   * says nothing about absolute relevance -- the best of ten irrelevant chunks
-   * still ranks first -- so the relevance floor reads this instead.
-   */
+  /** Cosine similarity to the query. The fused score is rank-based, so the relevance floor reads this. */
   similarity?: number;
   /** The full-text arm matched every query term, which is strong evidence on its own. */
   keywordMatch?: boolean;
@@ -37,15 +25,7 @@ export interface PromptOptions {
   /** Hard ceiling on context tokens, to stay inside the model's window. */
   maxContextTokens?: number;
   countTokens?: (text: string) => number;
-  /**
-   * Tokens already committed to this request outside the sources -- typically
-   * the conversation history and the question.
-   *
-   * Without it the budget is not a budget: sources were fitted to the ceiling
-   * and then history was appended on top, so the request could exceed the
-   * model's window by exactly the amount of history carried. Sources yield to
-   * history because history cannot be dropped without changing the question.
-   */
+  /** Tokens already committed outside the sources (history, question); sources fit around them. */
   reservedTokens?: number;
 }
 
@@ -158,11 +138,7 @@ export interface BuiltChat {
   used: RetrievedChunk[];
 }
 
-/**
- * The complete request, in one place so the API and the eval harness send the
- * model byte-identical prompts. An eval that rebuilt the prompt itself would be
- * measuring a prompt that production does not use.
- */
+/** The complete request, shared by the API and the eval so both send identical prompts. */
 export function buildChatMessages(
   input: { chunks: RetrievedChunk[]; history: ChatTurn[]; question: string },
   options: Omit<PromptOptions, 'reservedTokens'> = {},
@@ -185,19 +161,11 @@ export function buildChatMessages(
 }
 
 /**
- * Relevance floors measured by `pnpm eval --embed=...`, per embedding model.
- *
- * Only models that have actually been calibrated are listed. A cosine threshold
- * carried over from a different model is worse than none: text-embedding-3-small
- * puts unrelated text near 0.1 and related text above 0.3, while other models
- * compress everything into 0.6-0.9, where the same floor would refuse every
- * question. An unlisted model therefore gets no floor, and the API says so at
- * boot.
+ * Relevance floors measured by `pnpm eval --embed=...`. Cosine scales differ
+ * by model, so an unlisted model gets no floor rather than a borrowed one.
  */
 export const CALIBRATED_RELEVANCE_FLOORS: Readonly<Record<string, number>> = {
-  // 2026-09-25, eval/RESULTS.md: the weakest chunk that holds an answer scores
-  // 0.183 across 39 questions; this floor keeps all of them and refuses 5/9
-  // out-of-scope probes with no model call.
+  // Weakest answer chunk scored 0.183 across 39 questions (eval/README.md).
   'text-embedding-3-small': 0.15,
 };
 
@@ -209,18 +177,10 @@ export function calibratedRelevanceFloor(model: string): number | undefined {
 }
 
 /**
- * Drops chunks with no real claim to relevance.
- *
- * Nearest-neighbour search always returns neighbours: ask a knowledge base of
- * deployment runbooks for the capital of France and the "top" chunk is still a
- * runbook. Handing the model those chunks invites it to stretch them into an
- * answer. A chunk survives if the keyword arm matched it or its similarity
- * clears the floor; when nothing survives, the caller refuses without a model
- * call, which is both the cheapest and the most predictable refusal there is.
- *
- * The floor is specific to the embedding model -- cosine scales differ widely
- * between models -- which is why `pnpm eval` reports the similarity
- * distributions it should be chosen from, and why 0 (off) is always valid.
+ * Drops chunks with no claim to relevance: a chunk survives if the keyword arm
+ * matched it or its similarity clears the floor. Nearest-neighbour search
+ * always returns something, so without this an off-topic question still
+ * reaches the model with unrelated context. Empty means refuse.
  */
 export function selectRelevant(chunks: RetrievedChunk[], minSimilarity: number): RetrievedChunk[] {
   if (minSimilarity <= 0) return chunks;
@@ -230,15 +190,8 @@ export function selectRelevant(chunks: RetrievedChunk[], minSimilarity: number):
 }
 
 /**
- * Citation markers the model emitted, deduplicated, in order of appearance.
- *
- * Accepts the lenticular brackets `【1】` as well as `[1]`. gpt-oss -- the
- * default model of the Groq preset -- cites in its native `【n】` format however
- * firmly the prompt asks for square brackets, and a parser that only knew `[n]`
- * dropped every citation it made: answers on Groq showed no sources and were
- * classed as ungrounded, while the judge rated the same answers faithful. The
- * fullwidth `［1］` is accepted for the same reason. Anything else bracketed is
- * still ignored.
+ * Citation markers in order of appearance, deduplicated. Accepts `【n】` and
+ * `［n］` too: gpt-oss cites that way regardless of instructions.
  */
 export function extractCitationNumbers(answer: string): number[] {
   const out: number[] = [];

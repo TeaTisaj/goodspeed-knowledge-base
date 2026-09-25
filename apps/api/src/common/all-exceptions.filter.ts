@@ -13,14 +13,8 @@ import { ZodError } from 'zod';
 import { AppError } from './errors.js';
 
 /**
- * Maps every thrown value to RFC 9457 problem+json.
- *
- * Two rules worth stating:
- *  - Unexpected errors log their detail and return a generic message. Echoing
- *    an internal error to the client leaks stack shapes and query structure.
- *  - If the response has already started (a stream), nothing can be changed —
- *    status and headers are long gone. The stream layer emits an SSE `error`
- *    event instead; here we only avoid corrupting the response.
+ * Maps every thrown value to RFC 9457 problem+json. Unexpected errors are
+ * logged and answered generically; a response already streaming is left alone.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -96,11 +90,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
     }
 
-    // Errors raised by Express middleware before Nest sees the request --
-    // body-parser's "request entity too large", for one -- are `http-errors`
-    // objects, not HttpExceptions. They carry a client status and `expose`,
-    // meaning the message is safe to show. Treating them as unhandled turned a
-    // too-large document into a 500.
+    // Express middleware errors (http-errors) carry their own client status.
     const httpError = exception as { status?: unknown; expose?: unknown; message?: unknown };
     if (
       typeof httpError?.status === 'number' &&

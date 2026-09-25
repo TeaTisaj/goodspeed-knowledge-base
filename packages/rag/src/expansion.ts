@@ -1,22 +1,10 @@
 /**
- * Hypothetical-document query expansion (HyDE), opt-in.
+ * Hypothetical-document expansion (HyDE), off by default (`RETRIEVAL_HYDE`).
  *
- * A question and the passage that answers it are often worded nothing alike:
- * "if I stop using my prod login for a few months" against "access unused for
- * ninety days is revoked automatically". Embedding a *hypothetical answer*
- * instead moves the query into the vocabulary of documents. Measured in
- * eval/retrieval-experiments.mjs on 39 dev questions: hit@6 95% -> 97%,
- * paraphrase hit@6 50% -> 75%, no plain question lost, one model call per
- * question. Small evidence, a real cost -- so it is available, measured, and
- * off by default (`RETRIEVAL_HYDE`).
- *
- * **The security property that shapes the design:** a hypothetical answer is
- * plausible text by construction. Ask about the capital of France and the
- * model will happily write "policy" about it, which would sail past a relevance
- * floor. So expansion never decides relevance. The floor is applied to the
- * user's own question first; only when that finds something relevant are the
- * expansion's results fused in, and they can reorder and add to the candidates
- * but never turn a refusal into an answer.
+ * Embeds a plausible answer alongside the question to bridge vocabulary gaps.
+ * A hypothesis is plausible by construction, so it never decides relevance:
+ * the floor runs on the user's question first, and expansion can only reorder
+ * or add to results that already passed it.
  */
 import { neutraliseUntrusted } from './untrusted.js';
 import { reciprocalRankFusion } from './fusion.js';
@@ -34,23 +22,15 @@ ${neutraliseUntrusted(question)}
 </question>`;
 }
 
-/**
- * Whether an expansion is usable. It only ever feeds retrieval, so the risk of
- * a bad one is noise, not a wrong answer -- but a refusal or an essay would be
- * worse than nothing, and the raw question is always searched as well.
- */
+/** Rejects refusals and essays; the raw question is always searched as well. */
 export function acceptHypothetical(text: string, isRefusal: (t: string) => boolean): boolean {
   const t = text.trim();
   return t.length >= 20 && t.length <= 1200 && !isRefusal(t);
 }
 
 /**
- * Fuses the question's (already relevance-filtered) results with the
- * expansion's, by rank.
- *
- * Returns nothing if `primary` is empty: an expansion cannot make an
- * irrelevant question relevant. Chunks are taken from `primary` where both
- * lists have them, so `similarity` stays measured against the user's question.
+ * Fuses the question's filtered results with the expansion's by rank. Empty
+ * when `primary` is empty, and similarity stays measured against the question.
  */
 export function fuseExpansion(
   primary: RetrievedChunk[],

@@ -23,16 +23,7 @@ export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
   private chatProvider!: ChatProvider;
   private embeddingProvider!: EmbeddingProvider;
-  /**
-   * Request-scoped usage collection.
-   *
-   * These events are billing-adjacent, so they must land against the user who
-   * caused them. A single shared buffer drained per request cannot do that:
-   * two users generating answers concurrently interleave their pushes, and
-   * whichever request drains first takes the other's tokens. Async-local
-   * storage gives each `collect()` call its own bucket that survives every
-   * await in between, including the ones inside the streaming generator.
-   */
+  /** Per-request usage buckets, so concurrent users' tokens are never mixed. */
   private readonly usageScope = new AsyncLocalStorage<UsageEvent[]>();
 
   /** Events emitted outside any scope -- a bug if it grows, so it is counted. */
@@ -58,9 +49,6 @@ export class AiService implements OnModuleInit {
       },
       {
         usageSink: (e) => this.recordUsage(e),
-        // Only built when a fallback is actually configured. Previously an
-        // `onFallback` handler was passed with no fallback provider behind it,
-        // so the whole path was unreachable.
         fallback: env.AI_CHAT_FALLBACK_PROVIDER
           ? {
               provider: env.AI_CHAT_FALLBACK_PROVIDER,
@@ -122,19 +110,8 @@ export class AiService implements OnModuleInit {
   }
 
   /**
-   * Fails startup when the configured embedding size disagrees with the
-   * `chunks.embedding` column.
-   *
-   * The factory validates dimensions against the provider's declared
-   * capabilities, which catches a model that cannot produce what was asked for.
-   * It cannot catch the other half: a perfectly valid provider pointed at a
-   * schema built for a different size. `AI_EMBEDDING_DIMENSIONS=768` against a
-   * `vector(1536)` column passed every check and then failed on the first
-   * insert, with a pgvector error raised far from the configuration that caused
-   * it. The column is the authority, so it is asked directly.
-   *
-   * A database that cannot answer is a warning, not a failure -- the check is
-   * a guard, and it must not become a new reason the API refuses to boot.
+   * Fails startup when AI_EMBEDDING_DIMENSIONS disagrees with the
+   * `chunks.embedding` column. A database that cannot answer only warns.
    */
   private async assertDimensionsMatchSchema(): Promise<void> {
     const configured = this.embeddingProvider.capabilities.dimensions;
@@ -180,23 +157,14 @@ export class AiService implements OnModuleInit {
       bucket.push(event);
       return;
     }
-    // Nothing to attribute this to. Dropped rather than parked in a shared
-    // buffer, because a parked event is worse than a missing one: it gets
-    // charged to whoever happens to drain next.
+    // Dropped, not parked: a parked event would be charged to the next request.
     this.orphanedUsage += 1;
     this.logger.debug(`Usage event outside any scope (${this.orphanedUsage} total)`);
   }
 
   /**
-   * Opens a usage bucket for the current request and returns it.
-   *
-   * `enterWith` rather than `run(cb)` because the main consumer is an async
-   * generator: `run` would scope only the call that creates the generator, and
-   * every resumption after the first `yield` would fall outside it. `enterWith`
-   * binds the store to the current async context, which each request handler
-   * already has to itself, so the bucket survives the whole stream.
-   *
-   * The returned array fills as calls are made. Read it when the work is done.
+   * Opens a usage bucket for the current request. `enterWith`, not `run`, so it
+   * survives every resumption of a streaming generator.
    */
   beginUsageScope(): UsageEvent[] {
     const events: UsageEvent[] = [];

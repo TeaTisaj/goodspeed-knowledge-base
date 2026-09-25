@@ -85,7 +85,7 @@ export class DocumentsController {
     // join. A tags-only edit that skipped this left the chunks carrying the old
     // tags, and the document became invisible to a search filtered by its own
     // new tag. Re-ingestion is cheap when nothing else changed -- the content
-    // hash matches, so `ingest()` returns before chunking (see DECISIONS D15).
+    // hash matches, so `ingest()` returns before chunking (DECISIONS.md §8).
     if (body.content !== undefined || body.tags !== undefined) {
       await this.queue.enqueueIngest({ documentId: doc.id, ownerId: user.id });
     }

@@ -33,12 +33,7 @@ export interface OpenAICompatibleEmbeddingOptions {
   dimensions?: number;
 }
 
-/**
- * Maps vendor errors onto our normalised taxonomy.
- *
- * Done once, here, rather than in each caller: the retry policy should not be
- * in the business of recognising a Groq 429 versus an OpenAI 429.
- */
+/** Maps vendor errors onto the normalised taxonomy, once, so retry logic never parses vendor shapes. */
 function toAiError(err: unknown, providerId: string): AiProviderError {
   if (err instanceof AiProviderError) return err;
 
@@ -50,17 +45,8 @@ function toAiError(err: unknown, providerId: string): AiProviderError {
     else if (status === 408) code = 'timeout';
     else if (status === 400 && /context length|maximum context|too long/i.test(err.message))
       code = 'context_length';
-    // Not every provider says "no" with a 401. Gemini's OpenAI surface answers
-    // an invalid key with HTTP 400 and `"Please pass a valid API key"`, which
-    // the status check alone files as `bad_request` -- so an operator with a
-    // typo'd key is told their request was malformed, and the one diagnostic
-    // that would have named the real problem never appears. Found by the live
-    // reachability suite, which sends a deliberately bad key to every provider.
-    //
-    // Matched on the message rather than on the provider id, for the same
-    // reason the preset table is data: the next provider to do this should not
-    // need a new branch. The pattern is kept narrow enough that a genuine
-    // bad-request mentioning a key in passing will not trip it.
+    // Some providers (Gemini) reject a bad key with 400, not 401. Matched on the
+    // message, not the provider id, so the next one needs no branch.
     else if (
       status === 400 &&
       /\b(api[ _-]?key|credential|unauthenticated|unauthorized)\b/i.test(err.message)
@@ -122,13 +108,7 @@ function makeClient(baseUrl: string, apiKey: string | undefined, timeoutMs: numb
   });
 }
 
-/**
- * One adapter for every OpenAI-spec provider.
- *
- * Deliberately not five subclasses: the providers differ in endpoint and
- * capability, not in protocol, and that difference is already expressed as data
- * in presets.ts.
- */
+/** One adapter for every OpenAI-spec provider; the differences live in presets.ts as data. */
 export class OpenAICompatibleChatProvider implements ChatProvider {
   readonly id: string;
   readonly model: string;
@@ -189,11 +169,7 @@ export class OpenAICompatibleChatProvider implements ChatProvider {
           temperature: request.temperature,
           max_tokens: request.maxTokens,
           stream: true,
-          // Only request usage where the provider actually reports it. Not
-          // every provider tolerates the field, and the ones that ignore it
-          // silently are indistinguishable from the ones that honour it -- so
-          // the answer is asserted per provider by the live capability test
-          // rather than guessed here.
+          // Only where the provider reports it; asserted per provider by the live suite.
           ...(this.capabilities.streamingUsage ? { stream_options: { include_usage: true } } : {}),
         },
         { signal: request.signal },
@@ -280,8 +256,7 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
     const expected = this.dimensions ?? this.capabilities.dimensions;
     const actual = embeddings[0]?.length;
     if (actual !== undefined && actual !== expected) {
-      // Caught here rather than at the database, where it surfaces as an
-      // opaque pgvector dimension error far from the cause.
+      // Caught here, not as an opaque pgvector error at insert time.
       throw new AiProviderError(
         `[${this.id}] model "${this.model}" returned ${actual}-dim vectors, expected ${expected}. ` +
           `The vector column and AI_EMBEDDING_DIMENSIONS must match the model.`,

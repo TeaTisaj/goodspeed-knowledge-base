@@ -11,22 +11,11 @@ import {
 } from '../types.js';
 
 /**
- * Deterministic, offline provider. No credentials, no network.
+ * Deterministic, offline provider: runs the app with no API keys, doubles as
+ * the test fake, and lets CI run the retrieval eval without secrets.
  *
- * It has three jobs, and the third is what shapes the design:
- *   1. the app runs for a reviewer who has no API keys,
- *   2. it is the test double for every unit test,
- *   3. CI runs the retrieval eval without secrets.
- *
- * Because of (1) and (3), embeddings cannot be random. A hash-to-random-vector
- * fake produces vectors with no relationship to the text, so retrieval returns
- * arbitrary chunks — the demo looks broken and the eval measures noise.
- *
- * Instead this is a **hashing vectorizer**: tokens are hashed into buckets and
- * the vector is L2-normalised, so cosine similarity approximates lexical
- * overlap. It is not semantic — "car" and "automobile" stay unrelated — but it
- * is a real, monotonic similarity signal, which is enough for the demo to
- * behave sensibly and for the eval to produce a meaningful baseline.
+ * Embeddings come from a hashing vectorizer, so cosine similarity tracks
+ * lexical overlap -- not semantic, but a real signal, unlike random vectors.
  */
 
 const FNV_OFFSET = 2166136261;
@@ -78,12 +67,7 @@ export function hashingVector(text: string, dims: number): number[] {
   return v.map((x) => x / norm);
 }
 
-/**
- * Words that carry no topic. The extractive answer matches on content words
- * only: matching on "what", "is" and "the" made the zero-key demo answer "what
- * is the capital of France?" with a confidently cited runbook sentence --
- * precisely the first question a reviewer tries.
- */
+/** Stop words. Matching on content words only keeps "what is the capital of France?" from matching a runbook. */
 const STOPWORDS = new Set(
   (
     'a an and are as at be by can could did do does for from had has have how i if in into is it ' +
@@ -186,25 +170,14 @@ export class FakeChatProvider implements ChatProvider {
   }
 
   /**
-   * Extractive, not generative: it answers from the retrieved sources in the
-   * prompt and cites them.
-   *
-   * Two details matter for the zero-key demo to be honest:
-   *
-   *  - Only the `<source>` blocks are searched, never the instruction
-   *    preamble. Otherwise the "answer" is the system prompt read back, which
-   *    looks broken and tells a reviewer nothing.
-   *  - It emits real `[n]` citation markers, so the citation resolution and the
-   *    clickable-source UI are exercised without any API key.
+   * Extractive, not generative: quotes the best-matching `<source>` blocks
+   * (never the instructions) and emits real `[n]` citations.
    */
   private compose(request: ChatRequest): string {
     const last = [...request.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
-    // A condense request. An extractive fake cannot rewrite a question, so the
-    // honest output is the follow-up unchanged. Answering it like a question
-    // returned the refusal sentence, which the chat workflow then used as the
-    // search query -- every follow-up in the zero-key demo retrieved with
-    // "I could not find anything in your documents".
+    // A condense request: an extractive fake cannot rewrite, so it returns the
+    // follow-up unchanged.
     const followUp = /<follow_up>\n?([\s\S]*?)\n?<\/follow_up>/.exec(last);
     if (followUp) return (followUp[1] ?? '').trim();
 

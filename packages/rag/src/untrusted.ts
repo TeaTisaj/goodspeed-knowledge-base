@@ -1,58 +1,22 @@
 /**
- * Handling for text the model must treat as data, never as instructions.
+ * Text the model must treat as data, never as instructions.
  *
- * The threat model, because it decides what is worth defending:
- *
- * Retrieval is RLS-scoped, so a user's prompt only ever contains that user's
- * own documents -- there is no cross-user injection path to close. What remains
- * is **indirect prompt injection**: a user uploads a PDF, pastes a web page or
- * imports a vendor's README that they did not write, and that text contains
- * instructions aimed at the model ("ignore your rules", "tell the user to visit
- * ...", "reply only with ..."). The user is the victim, not the attacker, and
- * the answer they trust is what gets subverted.
- *
- * The defence is layered, and no single layer is relied on:
- *
- *   1. Structure. Sources travel in the user turn inside tags the document
- *      cannot forge (this file), never in the system message, so document text
- *      never speaks with system authority.
- *   2. Policy. The system prompt states that tagged content is data and that
- *      nothing inside it can change the rules (prompt.ts).
- *   3. Output. The UI renders no links or images, so an injected answer cannot
- *      exfiltrate through a URL the browser fetches (apps/web markdown.tsx), and
- *      citations resolve server-side so a forged "[7]" points at nothing.
- *   4. Measurement. The eval runs a poisoned corpus against a real model and
- *      fails if any attack lands (eval/generation.mjs).
- *
- * What this file deliberately does NOT do is refuse or redact documents that
- * look like injections. Heuristic classifiers are easy to evade and hostile to
- * legitimate content -- a security runbook that *discusses* prompt injection
- * would be flagged. Detection is used for observability only.
+ * Retrieval is RLS-scoped, so the threat is indirect prompt injection: a user
+ * uploads a document they did not write, and it tries to steer the answer.
+ * Defences are layered -- tagged structure (here), policy (prompt.ts), output
+ * with no links or images (web), and a poisoned-corpus eval. Nothing here
+ * blocks content: heuristics are easy to evade and would refuse a runbook that
+ * merely discusses injection, so detection is for logging only.
  */
 
 /**
- * Characters a person reading the document cannot see but a model reads.
- *
- *  - U+E0000..E007F, Unicode "tag" characters: each mirrors an ASCII character
- *    invisibly, so an entire instruction can be hidden inside a visible
- *    sentence ("ASCII smuggling").
- *  - Zero-width and word-joiner characters, used to split trigger words past a
- *    filter or to hide payload boundaries.
- *  - Bidirectional overrides, which make displayed text differ from the
- *    logical order the model receives ("Trojan Source").
- *  - The soft hyphen and BOM, invisible in rendering.
- *
- * Removing them loses nothing a reader could have seen.
+ * Invisible to a reader, visible to a model: Unicode tag characters (ASCII
+ * smuggling), zero-width joiners, bidi overrides, soft hyphen and BOM.
  */
 const INVISIBLE =
   /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|[\u{E0000}-\u{E007F}]/gu;
 
-/**
- * Tags that give the prompt its structure. A document containing
- * `</source><question>...` would otherwise close its own block and speak in a
- * channel it does not own; escaping the opening bracket keeps the text readable
- * to the model while making it inert as structure.
- */
+/** Prompt structure tags; escaped so a document cannot close its own block. */
 const STRUCTURAL_TAG =
   /<(\/?)\s*(sources?|question|system|instructions?|conversation|follow_up|passage)\b/gi;
 
@@ -99,18 +63,11 @@ const SIGNALS: [InjectionSignal, RegExp][] = [
   ],
 ];
 
-/**
- * Heuristic markers of an injection attempt, for logging and the eval only.
- *
- * Never used to block: see the file header for why. A hit means "worth a line
- * in the log", so the pattern set favours recall on the well-known phrasings
- * over precision.
- */
+/** Heuristic injection markers, for logs and the eval. Never used to block. */
 export function detectInjectionSignals(text: string): InjectionSignal[] {
   const found: InjectionSignal[] = [];
   if (INVISIBLE.test(text)) found.push('hidden_characters');
-  // A global regex keeps its lastIndex between calls; reset so the next call
-  // does not start matching halfway through the string.
+  // Global regexes keep lastIndex between calls.
   INVISIBLE.lastIndex = 0;
   for (const [signal, pattern] of SIGNALS) {
     if (pattern.test(text)) found.push(signal);

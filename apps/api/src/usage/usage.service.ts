@@ -16,23 +16,14 @@ export interface UsageSummaryRow {
   avgLatencyMs: number | null;
 }
 
-/**
- * Persists usage events and serves the rollup.
- *
- * Writes go through the service role because the figures are billing-adjacent:
- * a user able to insert their own rows would make the numbers meaningless. The
- * read path uses the caller's client, so RLS scopes the rollup to their rows.
- */
+/** Writes use the service role (users cannot insert their own usage); reads are RLS-scoped. */
 @Injectable()
 export class UsageService {
   private readonly logger = new Logger(UsageService.name);
 
   constructor(private readonly supabase: SupabaseService) {}
 
-  /**
-   * Recording usage must never fail the operation it is measuring. A user's
-   * answer should not be lost because the analytics write failed.
-   */
+  /** Never throws: an answer must not be lost to an analytics failure. */
   async record(ownerId: string, events: UsageEvent[]): Promise<void> {
     if (events.length === 0) return;
 

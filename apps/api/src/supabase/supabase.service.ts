@@ -6,17 +6,8 @@ import { ConfigService } from '../config/config.service.js';
 const MAX_CACHED_USER_CLIENTS = 500;
 
 /**
- * Two database access paths, deliberately separated.
- *
- * `forUser(token)` carries the caller's JWT, so every query runs through
- * PostgREST as that user and Postgres applies RLS. This is the permission
- * boundary — not `where owner_id = ?` in application code, which is one
- * forgotten clause away from a cross-user leak.
- *
- * `admin()` uses the service-role key and bypasses RLS entirely. It exists for
- * the ingestion worker, which must write chunks on a user's behalf outside any
- * request. Every use of it is a place where isolation depends on code rather
- * than the database, so uses are few and deliberate.
+ * Two access paths. `forUser(token)` runs as the caller, so Postgres RLS is the
+ * permission boundary. `admin()` bypasses RLS and is for the ingestion worker only.
  */
 @Injectable()
 export class SupabaseService {
@@ -31,22 +22,11 @@ export class SupabaseService {
     );
   }
 
-  /**
-   * RLS-enforced client for the current request.
-   *
-   * Cached per access token. `createClient` is not free -- it builds postgrest,
-   * auth, realtime and storage sub-clients -- and a single chat turn calls this
-   * six times while answering one question. The cache is keyed by the token, so
-   * two users can never share a client, and entries expire with the token.
-   *
-   * A bounded LRU rather than a plain map: tokens rotate, and an unbounded
-   * cache keyed by them is a slow memory leak.
-   */
+  /** RLS-enforced client, cached per token in a bounded LRU (a chat turn uses it several times). */
   forUser(accessToken: string): SupabaseClient {
     const cached = this.userClients.get(accessToken);
     if (cached) {
-      // Refresh recency: re-inserting moves the key to the end of the Map's
-      // insertion order, which is what makes the eviction below LRU.
+      // Re-inserting moves the key to the end of the Map, which makes eviction LRU.
       this.userClients.delete(accessToken);
       this.userClients.set(accessToken, cached);
       return cached;

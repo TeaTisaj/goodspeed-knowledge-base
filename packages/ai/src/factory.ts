@@ -35,21 +35,14 @@ export class AiConfigurationError extends Error {
 }
 
 /**
- * Validates configuration against declared provider capabilities.
- *
- * This runs at boot. The whole point of modelling capabilities is that an
- * impossible combination — Groq for embeddings, a 3072-dim model against a
- * 1536-dim column — is caught here, with a message naming the fix, rather than
- * surfacing as a 404 or an opaque pgvector error during ingestion.
+ * Validates configuration against declared capabilities at boot, so an
+ * impossible combination fails with a message naming the fix.
  */
 export function validateEmbeddingConfig(config: EmbeddingProviderConfig): void {
   const { provider } = config;
 
   if (provider === 'fake') return;
 
-  // Driven by the preset table, not by a provider name. A chat-only provider
-  // declares `embeddings: false` and is rejected here by that declaration, so
-  // adding the next one is a row rather than another branch.
   const chatPreset = CHAT_PRESETS[provider as keyof typeof CHAT_PRESETS];
   if (chatPreset && !chatPreset.embeddings) {
     throw new AiConfigurationError(
@@ -139,14 +132,9 @@ function buildBareChat(config: ChatProviderConfig): ChatProvider {
 }
 
 /**
- * Composes the decorator stack. Order is load-bearing:
- *
- *   usage-tracking( fallback( retry( provider ) ) )
- *
- * Retry sits innermost so a retried call is one logical request, not several.
- * Fallback wraps retry, so the secondary is tried only after the primary has
- * genuinely exhausted its retries. Usage tracking is outermost so it records
- * what the caller actually received, including any fallback.
+ * usage-tracking( fallback( retry( provider ) ) ). Retry is innermost so a
+ * retried call is one request; fallback runs only after retries are exhausted;
+ * usage records what the caller actually received.
  */
 export function buildChatProvider(
   config: ChatProviderConfig,
@@ -178,44 +166,21 @@ export function buildEmbeddingProvider(
 ): EmbeddingProvider {
   validateEmbeddingConfig(config);
 
+  const preset = EMBEDDING_PRESETS[config.provider as keyof typeof EMBEDDING_PRESETS];
   const bare: EmbeddingProvider =
     config.provider === 'fake'
       ? new FakeEmbeddingProvider({ model: config.model, dimensions: config.dimensions })
       : new OpenAICompatibleEmbeddingProvider({
           id: config.provider,
-          baseUrl:
-            config.baseUrl ??
-            EMBEDDING_PRESETS[config.provider as keyof typeof EMBEDDING_PRESETS]!.baseUrl,
+          baseUrl: config.baseUrl ?? preset!.baseUrl,
           apiKey: config.apiKey,
-          model:
-            config.model ??
-            EMBEDDING_PRESETS[config.provider as keyof typeof EMBEDDING_PRESETS]?.defaultModel ??
-            'unknown',
-          capabilities: EMBEDDING_PRESETS[config.provider as keyof typeof EMBEDDING_PRESETS]
-            ?.capabilities ?? {
+          model: config.model ?? preset?.defaultModel ?? 'unknown',
+          capabilities: preset?.capabilities ?? {
             dimensions: config.dimensions ?? 1536,
             maxBatchSize: 64,
             maxInputTokens: 8192,
-            /**
-             * Trust an explicit dimension for a provider we have no preset for.
-             *
-             * This used to be hardcoded `false`, which quietly made the layer's
-             * central claim untrue: an unknown provider could *never* request a
-             * dimension, so every embedding model needing the `dimensions`
-             * parameter was reachable only by adding a preset -- that is, by
-             * changing application code, which is the one thing the design is
-             * supposed to make unnecessary. Gemini is a live example: its
-             * vectors are 3072 by default, over pgvector's 2000-dim ceiling,
-             * and usable only when truncation is requested.
-             *
-             * `dimensions` is part of the OpenAI embeddings spec, so asking a
-             * spec-following provider for one is fair. Setting the variable is
-             * taken as the operator asserting their provider honours it, and
-             * being wrong is safe rather than silent: a provider that rejects
-             * the field fails the call, and one that ignores it returns its
-             * native width, which the response length check catches with an
-             * error naming the model and both sizes.
-             */
+            // An explicit size is sent as the spec's `dimensions` parameter; a provider
+            // that ignores it is caught by the response width check.
             configurableDimensions: config.dimensions !== undefined,
           },
           timeoutMs: config.timeoutMs,

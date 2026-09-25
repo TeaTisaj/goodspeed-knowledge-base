@@ -26,12 +26,7 @@ interface SearchRow {
   full_text_rank?: number | null;
 }
 
-/**
- * Retrieval runs through the caller's RLS-scoped client, so the database
- * enforces that a user can only ever retrieve their own chunks. There is no
- * application-level owner filter here, deliberately -- the isolation test
- * proves the policy does the work.
- */
+/** Runs through the caller's RLS-scoped client; there is deliberately no owner filter here. */
 @Injectable()
 export class RetrievalService {
   private readonly logger = new Logger(RetrievalService.name);
@@ -77,11 +72,7 @@ export class RetrievalService {
 
     const { data, error } = await rpc;
     if (error) {
-      // Raised, not swallowed. Returning [] here made a database failure
-      // indistinguishable from "your documents do not cover this" -- the user
-      // was told their corpus had no answer when in fact retrieval never ran.
-      // The chat stream turns this into an `error` event; the honest outcome is
-      // "something broke", not a confident refusal.
+      // Raised, not swallowed: an empty result would look like "not covered".
       this.logger.error(`Retrieval failed: ${error.message}`);
       throw AppError.internal(`Retrieval failed: ${error.message}`);
     }
@@ -108,14 +99,7 @@ export class RetrievalService {
     }));
   }
 
-  /**
-   * Optional LLM reranker.
-   *
-   * Off by default. RRF fusion is the always-on baseline because it is free and
-   * deterministic; this costs a model call and latency, so it has to earn its
-   * place. The eval harness reports hit rate with and without it, which is what
-   * the flag is for.
-   */
+  /** Optional LLM reranker. Off by default; RRF is free and deterministic, this costs a call. */
   async rerank(query: string, chunks: RetrievedChunk[], topK: number): Promise<RetrievedChunk[]> {
     if (chunks.length <= topK) return chunks;
 
@@ -139,9 +123,7 @@ export class RetrievalService {
           { role: 'user', content: `Question: ${query}\n\nPassages:\n${numbered}` },
         ],
         temperature: 0,
-        // The reply is a few numbers, but reasoning models spend the budget on
-        // hidden reasoning first; at 50 they return nothing and every rerank
-        // silently degrades to fusion order.
+        // Room for hidden reasoning, or reasoning models return nothing.
         maxTokens: 1024,
       });
 

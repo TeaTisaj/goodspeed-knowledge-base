@@ -11,16 +11,8 @@ import { z } from 'zod';
 const nonEmpty = z.string().trim().min(1);
 
 /**
- * Providers that ship with a preset, plus the offline `fake`.
- *
- * Derived from the AI layer rather than restated here. A second copy of this
- * list is how the two drift, and drift in *this* direction is invisible: the
- * config silently supports fewer providers than the layer does, and the
- * assignment's key requirement is the breadth of that list.
- *
- * A provider absent from both lists is still valid -- it just has to bring its
- * own base URL. That is what makes "any OpenAI-spec provider" true rather than
- * "these five".
+ * Derived from the AI layer's presets, never restated. A provider in neither
+ * list is still valid if it brings its own base URL.
  */
 export const CHAT_PROVIDERS = [...Object.keys(CHAT_PRESETS), 'fake'] as const;
 
@@ -36,14 +28,7 @@ export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(3001),
-    /**
-     * Comma-separated allowed origins.
-     *
-     * Defaults to both localhost and 127.0.0.1 because they are *different
-     * origins* to a browser, and a reviewer may open either. Allowing only one
-     * produces a blank page with a CORS error in the console and a working API
-     * when tested with curl -- which is exactly how this was first missed.
-     */
+    /** Comma-separated. Both hosts by default: browsers treat them as different origins. */
     CORS_ORIGIN: nonEmpty.default('http://localhost:3000,http://127.0.0.1:3000'),
 
     // Supabase. The service-role key is held by the worker only.
@@ -66,12 +51,7 @@ export const envSchema = z
     AI_CHAT_BASE_URL: z.url().optional(),
     AI_CHAT_API_KEY: z.string().optional(),
 
-    /**
-     * Optional secondary chat provider, used only when the primary fails
-     * unrecoverably after exhausting its retries. Left unset, there is no
-     * fallback and the request fails -- which is the right default: a silent
-     * switch to a different model changes answer quality without saying so.
-     */
+    /** Optional secondary chat provider, used only after the primary exhausts its retries. */
     AI_CHAT_FALLBACK_PROVIDER: nonEmpty.optional(),
     AI_CHAT_FALLBACK_MODEL: nonEmpty.optional(),
     AI_CHAT_FALLBACK_BASE_URL: z.url().optional(),
@@ -86,29 +66,16 @@ export const envSchema = z
 
     AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
     /**
-     * Ceiling on one answer's completion tokens -- the per-request cost cap.
-     *
-     * Unset, providers fall back to the model's own maximum: OpenRouter
-     * reserves 65k output tokens per request (and rejects it outright on a
-     * low-balance key), and a user who talks the model into a ten-thousand-word
-     * essay is billed for all of it. Generous rather than tight because
-     * reasoning models spend this budget on hidden reasoning before the first
-     * visible token; at 64 they return an empty answer.
+     * Per-answer completion cap, i.e. the per-request cost ceiling. Generous
+     * because reasoning models spend it on hidden reasoning first.
      */
     AI_ANSWER_MAX_TOKENS: z.coerce.number().int().min(256).max(32_000).default(2048),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
 
-    // Retrieval. Defaults chosen so hybrid + RRF is the baseline and the
-    // reranker is opt-in, because it costs a model call and the eval harness is
-    // what decides whether it pays for itself.
+    // Retrieval. The reranker is opt-in: it costs a model call per question.
     RETRIEVAL_CANDIDATES: z.coerce.number().int().min(1).max(100).default(12),
     RETRIEVAL_TOP_K: z.coerce.number().int().min(1).max(20).default(6),
-    /**
-     * Hypothetical-document expansion: one extra model call that embeds a
-     * plausible answer alongside the question. Off by default -- measured
-     * gain is one paraphrase in four, at a model call per question (eval/
-     * retrieval-experiments.mjs). Never affects the relevance floor.
-     */
+    /** HyDE query expansion. Off by default: one extra model call per question. */
     RETRIEVAL_HYDE: z
       .enum(['true', 'false'])
       .default('false')
@@ -119,23 +86,12 @@ export const envSchema = z
       .transform((v) => v === 'true'),
     MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(8000),
     /**
-     * Cosine-similarity floor below which a chunk is not relevant, unless the
-     * keyword arm also matched it. When nothing clears it the API refuses
-     * without calling the model. Specific to the embedding model -- cosine
-     * scales differ widely -- so `pnpm eval` prints the in-scope and
-     * out-of-scope distributions to choose it from. 0 disables the floor.
-     *
-     * Unset, the floor measured for the configured embedding model is used
-     * (CALIBRATED_RELEVANCE_FLOORS in @kb/rag), or none for a model nobody has
-     * calibrated.
+     * Similarity floor for the out-of-scope refusal; 0 disables it. Unset, the
+     * floor measured for the embedding model is used (see `pnpm eval`).
      */
     RETRIEVAL_MIN_SIMILARITY: z.coerce.number().min(0).max(1).optional(),
   })
-  /**
-   * A provider must be reachable, and a provider that requires a key must have
-   * one. Both are decided by the preset table, so neither restates a provider
-   * list that could fall out of date.
-   */
+  /** Reachability and key requirements both come from the preset table. */
   .superRefine((e, ctx) => {
     if (!resolvable(e.AI_CHAT_PROVIDER, CHAT_PROVIDERS, e.AI_CHAT_BASE_URL)) {
       ctx.addIssue({

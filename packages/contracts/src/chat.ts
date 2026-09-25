@@ -40,14 +40,7 @@ export const askSchema = z.object({
 });
 export type AskInput = z.infer<typeof askSchema>;
 
-/**
- * The streaming protocol, defined once and shared.
- *
- * A discriminated union rather than raw text chunks: the client must tell a
- * token from a citation payload from a terminal error, and SSE gives no way to
- * signal failure once headers are flushed — so `error` is an event, not a
- * status code.
- */
+/** The SSE protocol. Failures after headers are sent are an `error` event, not a status. */
 export const streamEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start'), conversationId: z.uuid(), messageId: z.uuid() }),
   z.object({
@@ -59,11 +52,7 @@ export const streamEventSchema = z.discriminatedUnion('type', [
    * can show them while text streams.
    */
   z.object({ type: z.literal('sources'), sources: z.array(citationSchema) }),
-  /**
-   * The sources the model actually cited, sent once the answer is complete.
-   * Always a subset of `sources`, and it is what gets persisted -- the two are
-   * separate events so the live view and a reloaded conversation agree.
-   */
+  /** What the model actually cited (a subset of `sources`); this is what gets persisted. */
   z.object({ type: z.literal('citations'), citations: z.array(citationSchema) }),
   z.object({ type: z.literal('token'), delta: z.string() }),
   z.object({
@@ -79,25 +68,12 @@ export const streamEventSchema = z.discriminatedUnion('type', [
 export type StreamEvent = z.infer<typeof streamEventSchema>;
 
 /**
- * The one sentence every refusal starts with.
- *
- * Part of the contract rather than a prompt detail because three parties read
- * it: the model is told to open with it, the API emits it verbatim when
- * retrieval finds nothing relevant (no model call at all), and the UI and the
- * eval harness recognise it. A refusal only a human can recognise cannot be
- * measured, and a refusal the UI cannot tell apart from an answer is shown with
- * the same confidence as one.
+ * The sentence every refusal starts with. A contract, not a prompt detail: the
+ * model, the API, the UI and the eval all recognise it.
  */
 export const NO_ANSWER = "I couldn't find that in your documents.";
 
-/**
- * True when an answer is a refusal.
- *
- * Tolerant of the two ways models reproduce a fixed sentence imperfectly -- a
- * typographic apostrophe and surrounding markdown emphasis -- and of a short
- * lead-in, but not of the sentence appearing late in a long answer, which is a
- * partial answer rather than a refusal.
- */
+/** True when an answer opens with the refusal, tolerating typographic quotes and emphasis. */
 export function isNoAnswer(text: string): boolean {
   const normalised = text.replace(/[‘’]/g, "'").replace(/[*_]/g, '').trim().toLowerCase();
   const at = normalised.indexOf(NO_ANSWER.toLowerCase().slice(0, -1));

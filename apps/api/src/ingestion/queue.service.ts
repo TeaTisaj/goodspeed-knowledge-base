@@ -10,17 +10,9 @@ export interface IngestJobData {
 }
 
 /**
- * Postgres-backed job queue.
- *
- * pg-boss rather than BullMQ+Redis: the queue lives in the database we already
- * run, so there is no extra container in the setup and enqueueing is
- * transactional with the document write. Redis buys throughput this workload
- * cannot justify — SCALING.md names the threshold where that changes.
- *
- * Note the connection requirement: pg-boss uses LISTEN/NOTIFY, which is
- * session-scoped. It must connect on a direct or session-mode DSN. Behind a
- * transaction-mode pooler (Supabase port 6543) jobs are enqueued successfully
- * and then silently never picked up.
+ * Postgres-backed job queue (pg-boss): no Redis to run, and SCALING.md names
+ * when that changes. Needs a direct or session-mode DSN -- LISTEN/NOTIFY does
+ * not work behind a transaction pooler.
  */
 @Injectable()
 export class QueueService implements OnModuleInit, OnApplicationShutdown {
@@ -60,17 +52,9 @@ export class QueueService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * Enqueues an ingestion job.
-   *
-   * Deliberately no `singletonKey`. It was used here first, to debounce rapid
-   * successive saves, and it silently broke re-ingestion: pg-boss enforces
-   * uniqueness on the key across *all* job states including `completed`, so
-   * after a document's first job finished, every later send returned null and
-   * the document could never be re-ingested.
-   *
-   * Duplicate jobs are cheap instead: `ingest()` compares the document's
-   * content hash first and returns immediately when nothing changed. Idempotent
-   * work beats a debounce that can lose an update.
+   * Enqueues an ingestion job. No `singletonKey`: pg-boss applies it across
+   * completed jobs too, which blocks re-ingestion. Duplicates are cheap because
+   * `ingest()` skips unchanged content.
    */
   async enqueueIngest(data: IngestJobData): Promise<string | null> {
     if (!this.boss) {
@@ -80,8 +64,7 @@ export class QueueService implements OnModuleInit, OnApplicationShutdown {
 
     const jobId = await this.boss.send(INGEST_QUEUE, data);
     if (!jobId) {
-      // send() returning null means the job was not created. Silently ignoring
-      // it is how a document sits in `queued` forever with no visible error.
+      // null means no job was created; never ignore it.
       this.logger.error(
         `Failed to enqueue ingestion for document ${data.documentId}: send() returned null`,
       );

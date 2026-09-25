@@ -16,16 +16,8 @@ async function bootstrap(): Promise<void> {
   });
   const config = app.get(ConfigService);
 
-  /**
-   * Sized to the contract, not to Express's default.
-   *
-   * The default JSON limit is 100 kB, while the document contract allows a
-   * million characters -- so every document between the two failed, and as a
-   * 500, because body-parser's error is not an HttpException. The contract's
-   * limit counts characters; in UTF-8 with JSON escaping a million of them can
-   * approach 4 MB, so the byte limit sits there and Zod enforces the real,
-   * user-facing limit with a message that says what it is.
-   */
+  // Sized to the document contract (1M characters), not Express's 100 kB default;
+  // Zod enforces the user-facing limit.
   app.useBodyParser('json', { limit: '4mb' });
 
   app.enableCors({
@@ -33,14 +25,7 @@ async function bootstrap(): Promise<void> {
     credentials: true,
   });
 
-  /**
-   * Security headers, set directly rather than via helmet.
-   *
-   * This is a JSON API with no HTML responses and no cookies, so most of
-   * helmet's defaults are inert here and its CSP would need disabling anyway.
-   * Four headers actually earn their place; a dependency to set four headers is
-   * a dependency to audit for no benefit.
-   */
+  // Security headers for a JSON-only API; four headers do not justify helmet.
   app.use((_req: unknown, res: ServerResponse, next: () => void) => {
     // The API only ever answers with JSON, so a browser must never be talked
     // into interpreting a response as script.
