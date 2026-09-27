@@ -16,10 +16,6 @@ export class ConfigService {
     this.env = parseEnv(raw);
   }
 
-  get isProduction(): boolean {
-    return this.env.NODE_ENV === 'production';
-  }
-
   /** True when no real credentials are configured — drives the zero-key demo path. */
   get isFullyFake(): boolean {
     return this.env.AI_CHAT_PROVIDER === 'fake' && this.env.AI_EMBEDDING_PROVIDER === 'fake';

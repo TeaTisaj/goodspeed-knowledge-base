@@ -60,6 +60,11 @@ export function validateEmbeddingConfig(config: EmbeddingProviderConfig): void {
         'For any other OpenAI-compatible service, set AI_EMBEDDING_BASE_URL explicitly.',
     );
   }
+  if (!preset && !config.model) {
+    throw new AiConfigurationError(
+      `AI_EMBEDDING_MODEL is required for "${provider}", which has no preset default.`,
+    );
+  }
 
   if (preset?.requiresApiKey && !config.apiKey) {
     throw new AiConfigurationError(`AI_EMBEDDING_API_KEY is required for provider "${provider}".`);
@@ -95,6 +100,11 @@ export function validateChatConfig(config: ChatProviderConfig): void {
         'For any other OpenAI-compatible service, set AI_CHAT_BASE_URL explicitly.',
     );
   }
+  if (!preset && !config.model) {
+    throw new AiConfigurationError(
+      `AI_CHAT_MODEL is required for "${config.provider}", which has no preset default.`,
+    );
+  }
   if (preset?.requiresApiKey && !config.apiKey) {
     throw new AiConfigurationError(
       `AI_CHAT_API_KEY is required for provider "${config.provider}".`,
@@ -119,7 +129,7 @@ function buildBareChat(config: ChatProviderConfig): ChatProvider {
     id: config.provider,
     baseUrl: config.baseUrl ?? preset!.baseUrl,
     apiKey: config.apiKey,
-    model: config.model ?? preset?.defaultModel ?? 'unknown',
+    model: config.model ?? preset!.defaultModel,
     capabilities: preset?.capabilities ?? {
       streaming: true,
       toolCalls: false,
@@ -174,7 +184,7 @@ export function buildEmbeddingProvider(
           id: config.provider,
           baseUrl: config.baseUrl ?? preset!.baseUrl,
           apiKey: config.apiKey,
-          model: config.model ?? preset?.defaultModel ?? 'unknown',
+          model: config.model ?? preset!.defaultModel,
           capabilities: preset?.capabilities ?? {
             dimensions: config.dimensions ?? 1536,
             maxBatchSize: 64,

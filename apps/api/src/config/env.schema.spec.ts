@@ -38,18 +38,18 @@ describe('parseEnv', () => {
     );
   });
 
-  // The assignment's key requirement is that *any* OpenAI-spec provider swaps in
-  // through configuration. A closed enum here silently reduced that to the five
-  // providers with presets, and the README's documented escape hatch failed at
-  // boot. These lock the escape hatch open.
+  // Any OpenAI-spec provider must work through configuration alone, not only
+  // the ones with presets.
   it('accepts a provider with no preset when it brings its own base URL', () => {
     const env = parseEnv({
       ...valid,
       AI_CHAT_PROVIDER: 'acme-llm',
       AI_CHAT_BASE_URL: 'https://api.acme.example/v1',
+      AI_CHAT_MODEL: 'acme-large',
       AI_CHAT_API_KEY: 'acme-key',
       AI_EMBEDDING_PROVIDER: 'acme-llm',
       AI_EMBEDDING_BASE_URL: 'https://api.acme.example/v1',
+      AI_EMBEDDING_MODEL: 'acme-embed',
       AI_EMBEDDING_API_KEY: 'acme-key',
     } as NodeJS.ProcessEnv);
     expect(env.AI_CHAT_PROVIDER).toBe('acme-llm');
@@ -61,8 +61,25 @@ describe('parseEnv', () => {
       ...valid,
       AI_CHAT_PROVIDER: 'internal-gateway',
       AI_CHAT_BASE_URL: 'http://gateway.internal:8080/v1',
+      AI_CHAT_MODEL: 'llama',
     } as NodeJS.ProcessEnv);
     expect(env.AI_CHAT_PROVIDER).toBe('internal-gateway');
+  });
+
+  it('requires a model for a provider with no preset default', () => {
+    expect(() =>
+      parseEnv({
+        ...valid,
+        AI_CHAT_PROVIDER: 'internal-gateway',
+        AI_CHAT_BASE_URL: 'http://gateway.internal:8080/v1',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/AI_CHAT_MODEL is required/);
+  });
+
+  it('leaves the model to the preset when unset, so the fake embedder keeps its own name', () => {
+    const env = parseEnv({ ...valid } as NodeJS.ProcessEnv);
+    expect(env.AI_CHAT_MODEL).toBeUndefined();
+    expect(env.AI_EMBEDDING_MODEL).toBeUndefined();
   });
 
   // Openness must not cost the typo check: a name with no preset and no base URL

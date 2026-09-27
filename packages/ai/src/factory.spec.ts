@@ -80,8 +80,19 @@ describe('embedding configuration validation', () => {
   it('rejects unknown providers unless a base URL is given', () => {
     expect(() => validateEmbeddingConfig({ provider: 'mystery', apiKey: 'k' })).toThrow(/Unknown/);
     expect(() =>
-      validateEmbeddingConfig({ provider: 'mystery', apiKey: 'k', baseUrl: 'https://x/v1' }),
+      validateEmbeddingConfig({
+        provider: 'mystery',
+        apiKey: 'k',
+        baseUrl: 'https://x/v1',
+        model: 'm',
+      }),
     ).not.toThrow();
+  });
+
+  it('requires a model when there is no preset to take a default from', () => {
+    expect(() =>
+      validateEmbeddingConfig({ provider: 'mystery', apiKey: 'k', baseUrl: 'https://x/v1' }),
+    ).toThrow(/AI_EMBEDDING_MODEL is required/);
   });
 });
 
@@ -94,8 +105,25 @@ describe('chat configuration validation', () => {
 
   it('accepts an arbitrary OpenAI-compatible service via base URL', () => {
     expect(() =>
-      validateChatConfig({ provider: 'self-hosted-vllm', apiKey: 'k', baseUrl: 'https://x/v1' }),
+      validateChatConfig({
+        provider: 'self-hosted-vllm',
+        apiKey: 'k',
+        baseUrl: 'https://x/v1',
+        model: 'llama',
+      }),
     ).not.toThrow();
+  });
+
+  it('requires a model when there is no preset to take a default from', () => {
+    expect(() =>
+      validateChatConfig({ provider: 'self-hosted-vllm', baseUrl: 'https://x/v1' }),
+    ).toThrow(/AI_CHAT_MODEL is required/);
+  });
+
+  it("uses the preset's default model when none is configured", () => {
+    expect(buildChatProvider({ provider: 'groq', apiKey: 'k' }).model).toBe(
+      CHAT_PRESETS.groq.defaultModel,
+    );
   });
 });
 
@@ -179,6 +207,7 @@ describe('a provider the registry has never heard of', () => {
   const unknown = {
     provider: 'acme-llm',
     baseUrl: 'https://api.acme-llm.example/v1',
+    model: 'acme-embed',
     apiKey: 'k',
   } as const;
 

@@ -14,10 +14,10 @@ const nonEmpty = z.string().trim().min(1);
  * Derived from the AI layer's presets, never restated. A provider in neither
  * list is still valid if it brings its own base URL.
  */
-export const CHAT_PROVIDERS = [...Object.keys(CHAT_PRESETS), 'fake'] as const;
+const CHAT_PROVIDERS = [...Object.keys(CHAT_PRESETS), 'fake'] as const;
 
 /** Providers exposing `/v1/embeddings`. Groq has no embeddings endpoint, so it is absent. */
-export const EMBEDDING_PROVIDERS = [...Object.keys(EMBEDDING_PRESETS), 'fake'] as const;
+const EMBEDDING_PROVIDERS = [...Object.keys(EMBEDDING_PRESETS), 'fake'] as const;
 
 /** A provider is configurable when it has a preset, or when it names its own endpoint. */
 function resolvable(provider: string, known: readonly string[], baseUrl: string | undefined) {
@@ -47,7 +47,8 @@ export const envSchema = z
     // AI: chat and embeddings are configured independently, because a realistic
     // deployment mixes them (e.g. chat on Groq, embeddings on OpenAI).
     AI_CHAT_PROVIDER: nonEmpty.default('fake'),
-    AI_CHAT_MODEL: nonEmpty.default('gpt-5.6'),
+    /** Unset uses the provider preset's default model. */
+    AI_CHAT_MODEL: nonEmpty.optional(),
     AI_CHAT_BASE_URL: z.url().optional(),
     AI_CHAT_API_KEY: z.string().optional(),
 
@@ -58,7 +59,7 @@ export const envSchema = z
     AI_CHAT_FALLBACK_API_KEY: z.string().optional(),
 
     AI_EMBEDDING_PROVIDER: nonEmpty.default('fake'),
-    AI_EMBEDDING_MODEL: nonEmpty.default('text-embedding-3-small'),
+    AI_EMBEDDING_MODEL: nonEmpty.optional(),
     AI_EMBEDDING_BASE_URL: z.url().optional(),
     AI_EMBEDDING_API_KEY: z.string().optional(),
     /** Must match the `vector(N)` column dimension; changing it requires re-ingestion. */
@@ -122,6 +123,20 @@ export const envSchema = z
           `${EMBEDDING_PROVIDERS.join(', ')}. Any other service following the OpenAI spec works ` +
           'by also setting AI_EMBEDDING_BASE_URL to its /v1 endpoint.',
       });
+    }
+
+    // A provider without a preset has no default model to fall back on.
+    for (const [kind, provider, model, known] of [
+      ['CHAT', e.AI_CHAT_PROVIDER, e.AI_CHAT_MODEL, CHAT_PROVIDERS],
+      ['EMBEDDING', e.AI_EMBEDDING_PROVIDER, e.AI_EMBEDDING_MODEL, EMBEDDING_PROVIDERS],
+    ] as const) {
+      if (!model && !known.includes(provider)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [`AI_${kind}_MODEL`],
+          message: `AI_${kind}_MODEL is required for "${provider}", which has no preset default.`,
+        });
+      }
     }
 
     // `fake` needs nothing so the app boots with zero credentials; Ollama runs
