@@ -8,6 +8,8 @@ import { IngestionService } from './ingestion.service.js';
 import { INGEST_QUEUE, QueueService, type IngestJobData } from './queue.service.js';
 import { isWorkerProcess } from './worker-process.js';
 
+const RECONCILE_PAGE_SIZE = 500;
+
 /**
  * Subscribes to the ingest queue: in-process by default, or its own process
  * with WORKER_MODE=standalone. Same code either way.
@@ -90,28 +92,42 @@ export class IngestionWorker implements OnModuleInit {
   /**
    * Enqueues anything left in `queued` at startup (seeded documents, or a crash
    * between write and enqueue). Safe on every boot: unchanged content is skipped.
+   *
+   * Paged by id, not offset: documents leave `queued` while this runs, and an
+   * offset would skip past the ones that shifted into earlier pages.
    */
   private async reconcile(): Promise<void> {
     try {
-      const { data, error } = await this.supabase
-        .admin()
-        .from('documents')
-        .select('id, owner_id')
-        .eq('status', 'queued')
-        .limit(500);
+      let enqueued = 0;
+      let after: string | undefined;
 
-      if (error) {
-        this.logger.warn(`Reconcile skipped: ${error.message}`);
-        return;
+      for (;;) {
+        let query = this.supabase
+          .admin()
+          .from('documents')
+          .select('id, owner_id')
+          .eq('status', 'queued')
+          .order('id')
+          .limit(RECONCILE_PAGE_SIZE);
+        if (after) query = query.gt('id', after);
+
+        const { data, error } = await query;
+        if (error) {
+          this.logger.warn(`Reconcile stopped after ${enqueued} document(s): ${error.message}`);
+          return;
+        }
+
+        const page = (data ?? []) as { id: string; owner_id: string }[];
+        for (const doc of page) {
+          await this.queue.enqueueIngest({ documentId: doc.id, ownerId: doc.owner_id });
+        }
+        enqueued += page.length;
+
+        if (page.length < RECONCILE_PAGE_SIZE) break;
+        after = page[page.length - 1]!.id;
       }
 
-      const pending = (data ?? []) as { id: string; owner_id: string }[];
-      if (pending.length === 0) return;
-
-      for (const doc of pending) {
-        await this.queue.enqueueIngest({ documentId: doc.id, ownerId: doc.owner_id });
-      }
-      this.logger.log(`Reconciled ${pending.length} document(s) stuck in queued`);
+      if (enqueued > 0) this.logger.log(`Reconciled ${enqueued} document(s) stuck in queued`);
     } catch (e) {
       // Reconciliation is best-effort; never block startup on it.
       this.logger.warn(`Reconcile failed: ${(e as Error).message}`);

@@ -81,9 +81,9 @@ export class IngestionService {
 
     // Chunks from another model aren't comparable, so none can be reused, and
     // left in place they collide with the rebuilt ones on (document_id, chunk_index).
-    const { error: staleError } = await db
+    const { count: staleDeleted, error: staleError } = await db
       .from('chunks')
-      .delete()
+      .delete({ count: 'exact' })
       .eq('document_id', doc.id)
       .neq('embedding_model', embedder.model);
     if (staleError) throw new Error(`stale chunk delete failed: ${staleError.message}`);
@@ -155,7 +155,7 @@ export class IngestionService {
       documentId: doc.id,
       chunksCreated: diff.created.length,
       chunksReused: diff.unchanged.length,
-      chunksDeleted: diff.deletedIds.length,
+      chunksDeleted: diff.deletedIds.length + (staleDeleted ?? 0),
       skipped: false,
     };
   }

@@ -90,12 +90,14 @@ describe('embedding model switch', () => {
 
   it('replaces every old-model chunk when the document is re-ingested', async () => {
     const id = await createDocument('Re-ingested after the switch');
-    await ingestionWith(OLD).ingest(id);
+    const before = await ingestionWith(OLD).ingest(id);
     await adminClient().rpc('requeue_stale_embeddings', { p_model: NEW });
 
     // Old and new chunks share (document_id, chunk_index), so leftovers collide on insert.
-    await ingestionWith(NEW).ingest(id);
+    const after = await ingestionWith(NEW).ingest(id);
 
+    expect(after.chunksReused).toBe(0);
+    expect(after.chunksDeleted).toBe(before.chunksCreated);
     const models = await chunkModels(id);
     expect(new Set(models)).toEqual(new Set([NEW]));
     expect(models).toHaveLength((await documentRow(id)).chunk_count);
