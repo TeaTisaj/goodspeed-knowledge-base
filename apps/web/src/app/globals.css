@@ -1,40 +1,122 @@
 @import 'tailwindcss';
 
 @theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Page background sits one step below cards, so surfaces read as layers without shadows. */
+  --color-canvas: #fafafa;
   --color-surface: #ffffff;
-  --color-surface-muted: #f6f7f9;
-  --color-border: #e3e6ea;
-  --color-ink: #12151a;
-  --color-ink-muted: #5b6672;
-  --color-accent: #2f6df6;
-  --color-danger: #d1344a;
-  --color-success: #16794c;
+  --color-surface-muted: #f4f4f5;
+  --color-border: #e4e4e7;
+  --color-border-strong: #d4d4d8;
+  --color-ink: #18181b;
+  --color-ink-muted: #71717a;
+  --color-accent: #4f46e5;
+  --color-accent-ink: #ffffff;
+  --color-accent-soft: #eef2ff;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fef2f2;
+  --color-success: #15803d;
+  --color-success-soft: #f0fdf4;
   /* Degraded-but-working. Distinct from danger, which means something failed. */
-  --color-warning: #8a5a00;
-  --color-warning-surface: #fff8e6;
+  --color-warning: #a16207;
+  --color-warning-surface: #fefce8;
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+/* Plain custom properties, not a second @theme: Tailwind hoists every @theme
+   block to :root and ignores the surrounding @media, so dark values used to
+   overwrite light ones unconditionally. */
 @media (prefers-color-scheme: dark) {
-  @theme {
-    --color-surface: #101318;
-    --color-surface-muted: #171b22;
-    --color-border: #262c36;
-    --color-ink: #e9edf2;
-    --color-ink-muted: #9aa6b4;
-    --color-accent: #6b9bff;
-    --color-danger: #ff7a8a;
-    --color-success: #4cc38a;
-    --color-warning: #e8b44a;
-    --color-warning-surface: #241d0e;
+  :root {
+    --color-canvas: #09090b;
+    --color-surface: #111113;
+    --color-surface-muted: #1b1b1f;
+    --color-border: #27272a;
+    --color-border-strong: #3f3f46;
+    --color-ink: #f4f4f5;
+    --color-ink-muted: #a1a1aa;
+    --color-accent: #818cf8;
+    --color-accent-ink: #0b0b1a;
+    --color-accent-soft: #1e1b4b;
+    --color-danger: #f87171;
+    --color-danger-soft: #2a1215;
+    --color-success: #4ade80;
+    --color-success-soft: #0f2417;
+    --color-warning: #facc15;
+    --color-warning-surface: #231d07;
   }
 }
 
 html,
 body {
-  background: var(--color-surface);
+  background: var(--color-canvas);
   color: var(--color-ink);
 }
 
 * {
   border-color: var(--color-border);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-accent) 25%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* In a layer so utilities (pl-9, w-full) can still override it. */
+@layer components {
+  /* Inputs show focus on the border rather than an offset ring, like the rest of the form. */
+  .field {
+    border-radius: 0.5rem;
+    border-width: 1px;
+    background: var(--color-surface);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    transition:
+      border-color 150ms,
+      box-shadow 150ms;
+  }
+  .field::placeholder {
+    color: var(--color-ink-muted);
+    opacity: 0.7;
+  }
+  .field:focus-visible {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 18%, transparent);
+  }
+}
+
+/* Loading placeholders: a sweep reads as "on its way" where a pulse reads as "stuck". */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-muted) 0%,
+    color-mix(in oklab, var(--color-surface-muted) 40%, var(--color-border)) 50%,
+    var(--color-surface-muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer,
+  .animate-pulse {
+    animation: none;
+  }
 }

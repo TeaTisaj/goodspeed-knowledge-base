@@ -63,8 +63,8 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <span className="size-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      <div className="flex min-h-screen items-center justify-center" aria-label="Loading">
+        <span className="size-5 animate-spin rounded-full border-2 border-[var(--color-accent)] border-t-transparent" />
       </div>
     );
   }

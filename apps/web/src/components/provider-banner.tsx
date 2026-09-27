@@ -3,6 +3,7 @@
 import type { Health } from '@kb/contracts';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { AlertIcon } from './icons';
 
 /**
  * Says out loud when the app is running without a real AI provider.
@@ -38,9 +39,10 @@ export function ProviderBanner() {
   return (
     <div
       role="status"
-      className="mt-4 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-surface)] px-4 py-3 text-sm"
+      className="mt-4 rounded-xl border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] bg-[var(--color-warning-surface)] px-4 py-3 text-sm"
     >
-      <p className="font-medium text-[var(--color-warning)]">
+      <p className="flex items-center gap-2 font-medium text-[var(--color-warning)]">
+        <AlertIcon />
         Offline demo mode — no AI provider is configured
       </p>
       <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-[var(--color-ink-muted)]">

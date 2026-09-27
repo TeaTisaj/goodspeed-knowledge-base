@@ -1,10 +1,17 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ApiError, api } from '@/lib/api';
+import { ArrowLeftIcon } from '@/components/icons';
 import { Button, ErrorBanner } from '@/components/ui';
-import { DocumentForm, parseTags, type DocumentFields } from '@/components/document-form';
+import {
+  DocumentForm,
+  parseTags,
+  useSaveShortcut,
+  type DocumentFields,
+} from '@/components/document-form';
 
 /** Nothing is stored until the first save, so an abandoned draft leaves no empty document. */
 export default function NewDocumentPage() {
@@ -38,15 +45,21 @@ export default function NewDocumentPage() {
     }
   }
 
+  useSaveShortcut(() => void save(), canSave);
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => router.push('/documents')} className="text-sm underline">
+        <Link
+          href="/documents"
+          className="flex items-center gap-1 text-sm text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
+        >
+          <ArrowLeftIcon />
           Back
-        </button>
-        <h1 className="text-base font-semibold">New document</h1>
+        </Link>
+        <h1 className="text-xl font-semibold tracking-tight">New document</h1>
         <div className="ml-auto">
-          <Button onClick={save} disabled={!canSave}>
+          <Button onClick={save} disabled={!canSave} title="Save (⌘S)">
             {saving ? 'Saving...' : 'Save'}
           </Button>
         </div>
