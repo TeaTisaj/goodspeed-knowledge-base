@@ -59,6 +59,16 @@ describe('Markdown rendering of model output', () => {
     expect(out).toContain('<button>cite-2</button>');
   });
 
+  it('renders a gpt-oss marker with a line locator as its citation', () => {
+    const out = renderToStaticMarkup(
+      <Markdown
+        text={'Not refundable【2†L13-L19】.'}
+        renderCitation={(n, key) => <button key={key}>cite-{n}</button>}
+      />,
+    );
+    expect(out).toContain('Not refundable<button>cite-2</button>.');
+  });
+
   it('leaves a marker as text when the renderer declines it', () => {
     const out = renderToStaticMarkup(<Markdown text="See [7]." renderCitation={() => null} />);
     expect(out).toContain('See [7].');

@@ -193,12 +193,15 @@ export function selectRelevant(chunks: RetrievedChunk[], minSimilarity: number):
 
 /**
  * Citation markers in order of appearance, deduplicated. Accepts `【n】` and
- * `［n］` too: gpt-oss cites that way regardless of instructions.
+ * `［n］` too: gpt-oss cites that way regardless of instructions,
+ * often with a line locator (`【2†L13-L19】`) that is ignored.
  */
 export function extractCitationNumbers(answer: string): number[] {
   const out: number[] = [];
   const seen = new Set<number>();
-  for (const m of answer.matchAll(/(?:\[|\u3010|\uFF3B)\s*(\d{1,2})\s*(?:\]|\u3011|\uFF3D)/g)) {
+  for (const m of answer.matchAll(
+    /(?:\[|\u3010|\uFF3B)\s*(\d{1,2})(?:\s*\u2020[^\]\u3011\uFF3D\n]{0,40})?\s*(?:\]|\u3011|\uFF3D)/g,
+  )) {
     const n = Number(m[1]);
     if (!seen.has(n)) {
       seen.add(n);

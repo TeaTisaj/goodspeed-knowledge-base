@@ -85,6 +85,12 @@ describe('extractCitationNumbers', () => {
     expect(extractCitationNumbers('Eight minutes【1】, then【3】.')).toEqual([1, 3]);
   });
 
+  it('ignores the line locator gpt-oss appends to a citation', () => {
+    expect(extractCitationNumbers('Not refundable【2†L13-L19】 【1†L1-L4】 [3†source].')).toEqual([
+      2, 1, 3,
+    ]);
+  });
+
   it('reads fullwidth square brackets and tolerates inner spaces', () => {
     expect(extractCitationNumbers('See \uFF3B2\uFF3D and [ 4 ].')).toEqual([2, 4]);
   });

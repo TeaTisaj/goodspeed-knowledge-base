@@ -17,9 +17,9 @@ export type RenderCitation = (n: number, key: string) => ReactNode | null;
 function renderInline(text: string, keyPrefix: string, cite?: RenderCitation): ReactNode[] {
   const nodes: ReactNode[] = [];
   // One pass, alternating between the delimiters so nesting cannot desync.
-  // Citation brackets match the server's parser, including gpt-oss's 【n】.
+  // Citation brackets match the server's parser, including gpt-oss's 【n】 and 【n†L1-L4】.
   const pattern =
-    /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|((?:\[|\u3010|\uFF3B)\s*(\d{1,2})\s*(?:\]|\u3011|\uFF3D))/g;
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|((?:\[|\u3010|\uFF3B)\s*(\d{1,2})(?:\s*\u2020[^\]\u3011\uFF3D\n]{0,40})?\s*(?:\]|\u3011|\uFF3D))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let i = 0;

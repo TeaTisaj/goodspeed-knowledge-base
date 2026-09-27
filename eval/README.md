@@ -54,8 +54,8 @@ calling the model. Cosine scales differ by embedding model, so the floor is meas
 
 Floor **0.15**: keeps every answer, refuses 5 of 9 off-topic probes for free. The rest reach the
 model, whose scope rules handle them. My first calibration used each question's _best_ chunk and
-picked 0.26; the generation eval showed that cut real answers to vague questions, so it was redone
-on the chunk that actually holds the answer.
+picked 0.26, which refused 7 of 9 probes; the generation eval showed that cut real answers to vague
+questions, so it was redone on the chunk that actually holds the answer.
 
 `gemini-embedding-001` scores on a narrower scale (answer chunks 0.284–0.379, probes 0.213–0.297),
 so its floor is **0.25**: every answer kept, 6 of 9 probes refused. The run waits out Gemini's
