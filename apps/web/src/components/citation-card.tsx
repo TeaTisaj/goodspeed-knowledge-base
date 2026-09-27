@@ -107,7 +107,7 @@ export function CitationPreview({
       {target && (
         <m.div
           ref={ref}
-          key={target.citation.chunkId}
+          key={target.citation.chunkId ?? `n${target.citation.number}`}
           aria-hidden="true"
           initial={{ opacity: 0, scale: 0.97, y: pos?.below ? -4 : 4 }}
           animate={{ opacity: pos ? 1 : 0, scale: 1, y: 0 }}

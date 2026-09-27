@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 export const citationSchema = z.object({
   number: z.number().int().positive(),
-  chunkId: z.uuid(),
-  documentId: z.uuid(),
+  /** Null on a saved citation whose chunk or document has since been deleted; the quote remains. */
+  chunkId: z.uuid().nullable(),
+  documentId: z.uuid().nullable(),
   documentTitle: z.string(),
   quote: z.string(),
 });

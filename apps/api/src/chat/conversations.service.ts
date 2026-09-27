@@ -38,7 +38,7 @@ export class ConversationsService {
       .from('messages')
       .select(
         'id, role, content, provider, model, prompt_tokens, completion_tokens, latency_ms, created_at, ' +
-          'message_citations(rank, chunk_id, document_id, quote)',
+          'message_citations(rank, chunk_id, document_id, quote, documents(title))',
       )
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
@@ -52,9 +52,9 @@ export class ConversationsService {
       const citations: Citation[] = rawCitations
         .map((c) => ({
           number: c.rank as number,
-          chunkId: (c.chunk_id as string) ?? '',
-          documentId: (c.document_id as string) ?? '',
-          documentTitle: '',
+          chunkId: (c.chunk_id as string | null) ?? null,
+          documentId: (c.document_id as string | null) ?? null,
+          documentTitle: (c.documents as { title: string } | null)?.title ?? '',
           quote: (c.quote as string) ?? '',
         }))
         .sort((a, b) => a.number - b.number);
