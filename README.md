@@ -184,6 +184,14 @@ Full reasoning, with alternatives, in [DECISIONS.md](DECISIONS.md); growth plan 
 - **Incremental, idempotent ingestion** keyed on content hashes.
 - **A workflow, not an agent**, for bounded cost and predictable behaviour.
 
+## Left out on purpose
+
+- **Team workspaces.** The task scopes visibility to a user's own documents. SCALING.md has the
+  migration path.
+- **Agent loops for retrieval.** Several times the tokens and no gain on single-corpus Q&A.
+- **Semantic chunking.** Reported gains are contested; the eval harness is how I'd decide.
+- **Redis.** Nothing needs it yet; SCALING.md names the load where it would.
+
 ## What I'd do next
 
 - **A bigger, messier eval set.** Real user questions with typos, ambiguity and multiple documents.
