@@ -167,6 +167,8 @@ export function buildChatMessages(
 export const CALIBRATED_RELEVANCE_FLOORS: Readonly<Record<string, number>> = {
   // Weakest answer chunk scored 0.183 across 39 questions (eval/README.md).
   'text-embedding-3-small': 0.15,
+  // Weakest answer chunk scored 0.284 across 39 questions; refuses 6/9 probes.
+  'gemini-embedding-001': 0.25,
 };
 
 /** The measured floor for a model, matched with or without a router prefix ("openai/..."). */
@@ -288,12 +290,9 @@ export function citationQuote(content: string, maxChars = MAX_QUOTE_CHARS): stri
 export const MAX_CONDENSED_CHARS = 500;
 
 /**
- * Completion budget for the condense call. The output is one sentence, but a
- * reasoning model spends its budget on hidden reasoning first: at the old
- * ceiling of 120 tokens every Groq model (all reasoning models now) returned an
- * empty rewrite, the guard fell back to the raw follow-up, and multi-turn
- * retrieval silently degraded with no error anywhere. The ceiling is a cap, not
- * a cost -- a non-reasoning model still stops after one sentence.
+ * Completion budget for the condense call. The output is one sentence, but
+ * reasoning models spend the budget on hidden reasoning first and return an
+ * empty rewrite when it is small. A cap, not a cost.
  */
 export const CONDENSE_MAX_TOKENS = 1024;
 

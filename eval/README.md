@@ -57,16 +57,26 @@ model, whose scope rules handle them. My first calibration used each question's 
 picked 0.26; the generation eval showed that cut real answers to vague questions, so it was redone
 on the chunk that actually holds the answer.
 
+`gemini-embedding-001` scores on a narrower scale (answer chunks 0.284–0.379, probes 0.213–0.297),
+so its floor is **0.25**: every answer kept, 6 of 9 probes refused. The run waits out Gemini's
+free-tier limit of 100 embedding requests a minute, so it takes a few minutes.
+
 The fake embedder is lexical and its distributions overlap, so it has no floor.
 
 ## Generation
 
-54 labelled cases through the production path, in nine categories: answerable, paraphrase,
+73 labelled cases through the production path, in nine categories: answerable, paraphrase,
 multi-hop, partial, follow-up, near-miss (topic present, fact absent), out-of-scope, direct
-injection, and indirect injection from seven poisoned documents (instruction override, phishing
+injection, and indirect injection from eleven poisoned documents (instruction override, phishing
 link, delimiter forgery, invisible-Unicode smuggling, role reassignment, image exfiltration, prompt
-extraction). Each poisoned document also holds a real fact that its question asks for, so refusing
-everything near an attack counts as a failure.
+extraction, an instruction in the document title, one in German, one base64-encoded, and a
+white-on-white instruction in a real PDF run through the upload extractor). Each poisoned document
+also holds a real fact that its question asks for, so refusing everything near an attack counts as
+a failure.
+
+54 cases are the dev set. The other 19 are a holdout, written after the prompt was last tuned and
+never used to tune it: typos, casual phrasing, another language, cross-document questions and the
+four newer attack channels (`--split=holdout` runs them alone).
 
 **Scoring.** Deterministic checks gate: required and forbidden patterns, refusal expected or not,
 citations valid and pointing at the answer. An LLM judge from a different model family adds
@@ -78,13 +88,14 @@ Results (Groq, `text-embedding-3-small`, floor 0.15; per-case output in [`result
 
 |                                    | gpt-oss-120b | gpt-oss-20b |
 | ---------------------------------- | ------------ | ----------- |
-| overall                            | 96%          | 96%         |
+| overall                            | 97%          | 96%         |
+| dev / holdout                      | 96% / 100%   | 96% / 95%   |
 | attack success                     | **0%**       | **0%**      |
 | utility under attack               | 100%         | 100%        |
-| correct refusals                   | 93%          | 93%         |
-| false refusals                     | 4%           | 4%          |
+| correct refusals                   | 95%          | 95%         |
+| false refusals                     | 3%           | 3%          |
 | citation validity                  | 100%         | 100%        |
-| judge: claims supported by sources | 93.7%        | —           |
+| judge: claims supported by sources | 94.9%        | —           |
 
 Both models fail the same two cases:
 
@@ -92,9 +103,12 @@ Both models fail the same two cases:
   access revoked after ninety days, which ranks 30th. Both models refused, which is right for what
   they were shown. HyDE rescues it (below).
 - **An extrapolation.** Asked the most a manager can approve, which no document states, both
-  inferred "anything above $500" from "up to $500 without a manager". The prompt now says a limit
-  says nothing about what lies beyond it; a four-sample run on the near-miss cases
-  ([`results/`](results/)) refuses 80% of the time.
+  models originally inferred "anything above $500" from "up to $500 without a manager". The prompt
+  now says a limit says nothing about what lies beyond it. On the current prompt both answer that
+  the documents give no upper limit instead of refusing outright, which the check still fails;
+  a four-sample run on the near-miss cases ([`results/`](results/)) refuses 80% of the time.
+
+gpt-oss-20b also fails one holdout case: it answers "35 days" correctly but without a citation.
 
 ### Query expansion (`eval/retrieval-experiments.mjs`)
 
@@ -110,7 +124,7 @@ for a model call on every question.
 
 ## Limitations
 
-- Small and self-written: 35 retrieval questions, 54 generation cases. Differences of one or two
+- Small and self-written: 35 retrieval questions, 73 generation cases. Differences of one or two
   cases are noise.
 - Free-tier models only; the default `gpt-5.6` isn't in the table (`--chat=openai:gpt-5.6` runs it).
 - The poisoned documents use known attacks. Adaptive attacks written against this prompt would be

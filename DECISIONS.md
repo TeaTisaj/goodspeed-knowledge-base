@@ -130,7 +130,8 @@ because "what about the second one?" retrieves nothing useful.
 - **Not built:** a classifier that blocks "injection-looking" text. It's easy to evade and would
   refuse a runbook that discusses injection. Heuristic hits are logged instead.
 
-Tested against seven poisoned documents: 0% attack success, 100% utility.
+Tested against eleven poisoned documents, including a white-on-white instruction in a real PDF: 0%
+attack success, 100% utility.
 
 ## 12. Streaming that survives production
 

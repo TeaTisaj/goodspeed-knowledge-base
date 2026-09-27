@@ -22,7 +22,7 @@
  * "fifth result" identically, and they are not equivalent: the context budget
  * means a lower-ranked chunk is likelier to be dropped before the model sees it.
  */
-import { buildEmbeddingProvider } from '@kb/ai';
+import { buildEmbeddingProvider, MemoryEmbeddingCache } from '@kb/ai';
 import { CORPUS } from './fixtures/build-corpus.mjs';
 import { CASES, OUT_OF_SCOPE_PROBES } from './fixtures/generation-cases.mjs';
 import { QUESTIONS } from './fixtures/questions.mjs';
@@ -35,6 +35,32 @@ const arg = (name, fallback) => {
 };
 
 loadEvalEnv();
+
+/**
+ * A batch job can afford to wait out a per-minute quota where a chat request
+ * cannot, so the eval sleeps for as long as the provider asks instead of
+ * failing a run that is half done. (The app's own retry stays capped at 8s.)
+ */
+function waitOutRateLimits(provider, attempts = 5) {
+  return {
+    ...provider,
+    id: provider.id,
+    model: provider.model,
+    async embed(request) {
+      for (let i = 0; ; i++) {
+        try {
+          return await provider.embed(request);
+        } catch (err) {
+          if (err?.code !== 'rate_limit' || i >= attempts) throw err;
+          const asked = Number(/retry in ([\d.]+)s/i.exec(err.message)?.[1]);
+          const seconds = Math.ceil(Number.isFinite(asked) ? asked : 60) + 2;
+          console.error(`  (rate limited by ${provider.id}; waiting ${seconds}s)`);
+          await new Promise((r) => setTimeout(r, seconds * 1000));
+        }
+      }
+    },
+  };
+}
 const KS = [1, 3, 5];
 
 async function evaluate(embedder, index, mode) {
@@ -68,7 +94,15 @@ async function evaluate(embedder, index, mode) {
 // `--provider=openai` keeps working; `--embed=openrouter:openai/text-embedding-3-small`
 // names the model too. Keys come from AI_EMBEDDING_API_KEY or LIVE_<ID>_API_KEY.
 const embedTarget = resolveTarget(arg('embed', arg('provider', 'fake')), 'embedding');
-const embedder = buildEmbeddingProvider({ ...embedTarget, dimensions: 1536 });
+// Every config below re-embeds the same questions and many of the same chunks.
+// Caching them keeps a run to one request per distinct text, which is what fits
+// a free tier (Gemini allows 100 embedding requests a minute).
+const embedder = waitOutRateLimits(
+  buildEmbeddingProvider(
+    { ...embedTarget, dimensions: 1536 },
+    { cacheStore: new MemoryEmbeddingCache() },
+  ),
+);
 
 const pct = (n) => `${(n * 100).toFixed(0)}%`;
 const row = (label, r, extra = '', corpusShare = null) =>

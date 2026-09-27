@@ -14,7 +14,7 @@ documents and cite the exact passage behind each claim.
   filter in app code, and integration tests prove isolation against a real database.
 - **Hybrid retrieval, measured.** pgvector (HNSW) plus full-text search, fused with RRF: 91% hit@1,
   100% hit@5 on the eval set.
-- **Safe with untrusted documents.** 0% prompt-injection success across seven poisoned documents;
+- **Safe with untrusted documents.** 0% prompt-injection success across eleven poisoned documents;
   off-topic questions are refused without a model call.
 - **All stretch goals.** Streaming, persistent history, chunk-level citations, PDF/TXT upload, and a
   usage and cost view.
@@ -92,10 +92,12 @@ AI_EMBEDDING_DIMENSIONS=768
 # Any other OpenAI-spec service: any name, plus its endpoint
 AI_CHAT_PROVIDER=acme-llm
 AI_CHAT_BASE_URL=https://api.acme.example/v1
+AI_CHAT_MODEL=acme-large
 AI_CHAT_API_KEY=...
 ```
 
-Also available: `AI_CHAT_MODEL`, a fallback provider (`AI_CHAT_FALLBACK_*`), timeouts and retries.
+Models default to each preset's; override with `AI_CHAT_MODEL` / `AI_EMBEDDING_MODEL`. Also
+available: a fallback provider (`AI_CHAT_FALLBACK_*`), timeouts and retries.
 Every variable is documented in [`.env.example`](.env.example).
 
 **How the interface is modelled.** The OpenAI SDK already takes a `baseURL`, so the design isn't
@@ -143,12 +145,12 @@ Headline results (details and caveats in [eval/README.md](eval/README.md)):
 | keyword only                         | 91%   | 94%   | 0.929 |
 | **hybrid (RRF)**                     | 91%   | 100%  | 0.945 |
 
-| generation (54 cases, gpt-oss-120b on Groq) |       |
+| generation (73 cases, gpt-oss-120b on Groq) |       |
 | ------------------------------------------- | ----- |
-| overall                                     | 96%   |
+| overall                                     | 97%   |
 | prompt-injection success                    | 0%    |
-| correct refusals                            | 93%   |
-| claims supported by sources (LLM judge)     | 93.7% |
+| correct refusals                            | 95%   |
+| claims supported by sources (LLM judge)     | 94.9% |
 
 ## Security
 
