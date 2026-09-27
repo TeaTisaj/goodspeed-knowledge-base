@@ -70,7 +70,9 @@ disabled.
 - `chunks.embedding_model` is stored, and retrieval refuses to compare vectors from different models.
 - Citations keep a quote snapshot and `on delete set null`, so old answers stay readable after a
   document changes.
-- Changing embedding model is a data migration, not a config flip: `pnpm reembed` generates one.
+- Changing embedding model re-embeds on the next start: the worker requeues every document with
+  chunks from another model. A change of vector size is a schema change instead, so the API refuses
+  to boot and `pnpm reembed` generates the migration.
 
 ## 7. Chunking: recursive, structure-aware, 512 tokens / 64 overlap
 

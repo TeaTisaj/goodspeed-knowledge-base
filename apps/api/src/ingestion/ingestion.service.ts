@@ -79,13 +79,19 @@ export class IngestionService {
   ): Promise<IngestionOutcome> {
     const incoming = chunkText(cleaned);
 
+    // Chunks from another model aren't comparable, so none can be reused, and
+    // left in place they collide with the rebuilt ones on (document_id, chunk_index).
+    const { error: staleError } = await db
+      .from('chunks')
+      .delete()
+      .eq('document_id', doc.id)
+      .neq('embedding_model', embedder.model);
+    if (staleError) throw new Error(`stale chunk delete failed: ${staleError.message}`);
+
     const { data: existingRows } = await db
       .from('chunks')
       .select('id, chunk_index, content_hash')
-      .eq('document_id', doc.id)
-      // A chunk embedded by a different model is not comparable, so treat it
-      // as absent and force a re-embed rather than mixing vector spaces.
-      .eq('embedding_model', embedder.model);
+      .eq('document_id', doc.id);
 
     const existing: ExistingChunk[] = (existingRows ?? []).map((r) => ({
       id: r.id as string,

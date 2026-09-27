@@ -54,7 +54,37 @@ export class IngestionWorker implements OnModuleInit {
     );
     this.logger.log(`Worker listening (mode=${this.config.env.WORKER_MODE})`);
 
+    await this.requeueStaleEmbeddings();
     await this.reconcile();
+  }
+
+  /**
+   * Requeues documents embedded by a different model, so changing the embedding
+   * provider is a restart. A model of a different width is caught earlier: the
+   * API refuses to boot and points at `pnpm reembed`.
+   */
+  private async requeueStaleEmbeddings(): Promise<void> {
+    const model = this.ai.embeddings.model;
+    try {
+      const { data, error } = await this.supabase
+        .admin()
+        .rpc('requeue_stale_embeddings', { p_model: model });
+
+      if (error) {
+        this.logger.warn(`Stale embedding check skipped: ${error.message}`);
+        return;
+      }
+
+      const count = data as number;
+      if (count > 0) {
+        this.logger.warn(
+          `Embedding model is now "${model}": re-embedding ${count} document(s) ` +
+            'made with a different model. They are not searchable until it finishes.',
+        );
+      }
+    } catch (e) {
+      this.logger.warn(`Stale embedding check failed: ${(e as Error).message}`);
+    }
   }
 
   /**

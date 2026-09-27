@@ -108,9 +108,11 @@ boot if the embedding size doesn't match the database column. One adapter plus a
 every provider; retry, fallback, caching and usage tracking are decorators around it
 ([`packages/ai`](packages/ai/src)).
 
-**Changing chat is a restart. Changing embeddings is a data migration**, because vectors from
-different models aren't comparable. `pnpm reembed` generates and applies that migration, and the
-worker re-embeds every document.
+**Changing chat is a restart. So is changing embeddings to a model of the same size** (e.g. the
+default `fake` to OpenAI): vectors from different models aren't comparable, so on startup the worker
+re-embeds every document made with another model, and the documents list shows the progress. A
+different size (Ollama's 768) changes the column type, so the API refuses to boot and names the fix:
+`pnpm reembed` generates and applies that migration.
 
 **Verified** by one shared contract suite, run stubbed in CI and live with `pnpm test:live`:
 
