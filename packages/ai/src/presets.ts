@@ -40,6 +40,8 @@ export const CHAT_PRESETS = {
       jsonMode: true,
       streamingUsage: true,
       maxContextTokens: 400_000,
+      // Accepted by every current OpenAI model; the GPT-5 family rejects `max_tokens`.
+      tokenLimitParam: 'max_completion_tokens',
     },
     notes:
       'Targets /v1/chat/completions, not the Responses API. Responses is OpenAI-only; ' +

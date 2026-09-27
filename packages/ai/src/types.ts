@@ -40,6 +40,12 @@ export interface ChatCapabilities {
   streamingUsage: boolean;
   /** The prompt is fitted to `min(this, MAX_CONTEXT_TOKENS)`. */
   maxContextTokens: number;
+  /**
+   * The request field that caps the answer. OpenAI's reasoning models (o-series,
+   * GPT-5) refuse the spec's original `max_tokens`; most other providers accept
+   * only that. Absent means `max_tokens`.
+   */
+  tokenLimitParam?: 'max_tokens' | 'max_completion_tokens';
 }
 
 export interface EmbeddingCapabilities {

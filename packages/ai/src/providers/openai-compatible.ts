@@ -97,6 +97,24 @@ function toAiError(err: unknown, providerId: string): AiProviderError {
   });
 }
 
+type RefusableParam = 'temperature' | 'max_tokens';
+
+/**
+ * The field a 400 says this model does not accept, if it is one the request can
+ * drop or rename. OpenAI's reasoning models answer `temperature: 0.2` with
+ * "Unsupported value: 'temperature' does not support 0.2 with this model" and
+ * `max_tokens` with "Unsupported parameter: 'max_tokens' ... Use
+ * 'max_completion_tokens' instead."
+ */
+function refusedParam(err: unknown): RefusableParam | undefined {
+  if (!(err instanceof OpenAI.APIError) || err.status !== 400) return undefined;
+  if (!/unsupported|not supported|does not support/i.test(err.message)) return undefined;
+  const named = `${err.param ?? ''} ${err.message}`;
+  if (/\btemperature\b/.test(named)) return 'temperature';
+  if (/\bmax_tokens\b/.test(named)) return 'max_tokens';
+  return undefined;
+}
+
 function makeClient(baseUrl: string, apiKey: string | undefined, timeoutMs: number): OpenAI {
   return new OpenAI({
     baseURL: baseUrl,
@@ -114,6 +132,13 @@ export class OpenAICompatibleChatProvider implements ChatProvider {
   readonly model: string;
   readonly capabilities: ChatCapabilities;
   private readonly client: OpenAI;
+  /**
+   * Request fields this model has refused. Reasoning models reject a custom
+   * `temperature`, and which ones do varies by model rather than by provider,
+   * so it is learned from the model's own 400 instead of kept as a list that
+   * rots. Costs one extra round trip per field, once per process.
+   */
+  private readonly refused = new Set<RefusableParam>();
 
   constructor(opts: OpenAICompatibleChatOptions) {
     this.id = opts.id;
@@ -122,17 +147,40 @@ export class OpenAICompatibleChatProvider implements ChatProvider {
     this.client = makeClient(opts.baseUrl, opts.apiKey, opts.timeoutMs ?? 30_000);
   }
 
+  private params(request: ChatRequest) {
+    const completionTokens =
+      this.capabilities.tokenLimitParam === 'max_completion_tokens' ||
+      this.refused.has('max_tokens');
+    return {
+      model: this.model,
+      messages: request.messages,
+      ...(this.refused.has('temperature') ? {} : { temperature: request.temperature }),
+      ...(completionTokens
+        ? { max_completion_tokens: request.maxTokens }
+        : { max_tokens: request.maxTokens }),
+    };
+  }
+
+  /** Sends, and if the model refuses a field it can do without, resends once without it. */
+  private async withParamFallback<T>(send: () => Promise<T>): Promise<T> {
+    for (;;) {
+      try {
+        return await send();
+      } catch (err) {
+        const param = refusedParam(err);
+        if (!param || this.refused.has(param)) throw err;
+        this.refused.add(param);
+      }
+    }
+  }
+
   async chat(request: ChatRequest): Promise<ChatResult> {
     try {
-      const res = await this.client.chat.completions.create(
-        {
-          model: this.model,
-          messages: request.messages,
-          temperature: request.temperature,
-          max_tokens: request.maxTokens,
-          stream: false,
-        },
-        { signal: request.signal },
+      const res = await this.withParamFallback(() =>
+        this.client.chat.completions.create(
+          { ...this.params(request), stream: false },
+          { signal: request.signal },
+        ),
       );
 
       const choice = res.choices[0];
@@ -162,17 +210,18 @@ export class OpenAICompatibleChatProvider implements ChatProvider {
 
     let finishReason: ChatResult['finishReason'] = 'unknown';
     try {
-      const stream = await this.client.chat.completions.create(
-        {
-          model: this.model,
-          messages: request.messages,
-          temperature: request.temperature,
-          max_tokens: request.maxTokens,
-          stream: true,
-          // Only where the provider reports it; asserted per provider by the live suite.
-          ...(this.capabilities.streamingUsage ? { stream_options: { include_usage: true } } : {}),
-        },
-        { signal: request.signal },
+      const stream = await this.withParamFallback(() =>
+        this.client.chat.completions.create(
+          {
+            ...this.params(request),
+            stream: true,
+            // Only where the provider reports it; asserted per provider by the live suite.
+            ...(this.capabilities.streamingUsage
+              ? { stream_options: { include_usage: true } }
+              : {}),
+          },
+          { signal: request.signal },
+        ),
       );
 
       for await (const part of stream) {
