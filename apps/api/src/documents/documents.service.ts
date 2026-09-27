@@ -149,14 +149,4 @@ export class DocumentsService {
     // RLS makes another user's row invisible, so a no-op delete is a 404.
     if (!data) throw AppError.notFound('Document');
   }
-
-  /** Whether content actually changed, so ingestion can be skipped entirely. */
-  async contentChanged(accessToken: string, id: string, newHash: string): Promise<boolean> {
-    const { data } = await this.client(accessToken)
-      .from('documents')
-      .select('content_hash')
-      .eq('id', id)
-      .maybeSingle();
-    return (data as { content_hash: string | null } | null)?.content_hash !== newHash;
-  }
 }

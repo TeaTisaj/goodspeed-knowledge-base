@@ -280,7 +280,7 @@ export function runEmbeddingContract(
   });
 }
 
-export function cosine(a: number[], b: number[]): number {
+function cosine(a: number[], b: number[]): number {
   let dot = 0;
   let na = 0;
   let nb = 0;

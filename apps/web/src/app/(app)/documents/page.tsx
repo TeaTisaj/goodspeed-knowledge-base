@@ -46,6 +46,7 @@ export default function DocumentsPage() {
   }, [tag, search]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load() sets state only after its await
     void load();
   }, [load]);
 

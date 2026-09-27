@@ -9,7 +9,7 @@
  */
 import { chunkText, reciprocalRankFusion } from '@kb/rag';
 
-export const tokenize = (t) =>
+const tokenize = (t) =>
   t
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -39,14 +39,14 @@ const stem = (w) => w.replace(/(ing|ed|es|s)$/, '');
  * places (no dictionary stemming), so the eval's relevance floor is, if
  * anything, slightly harder to pass than production's.
  */
-export function keywordMatches(query, chunkStems) {
+function keywordMatches(query, chunkStems) {
   const terms = tokenize(query)
     .filter((t) => !STOPWORDS.has(t))
     .map(stem);
   return terms.length > 0 && terms.every((t) => chunkStems.has(t));
 }
 
-export const cosine = (a, b) => {
+const cosine = (a, b) => {
   let s = 0;
   for (let i = 0; i < a.length; i++) s += a[i] * b[i];
   return s;

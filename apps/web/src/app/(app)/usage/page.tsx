@@ -25,6 +25,7 @@ export default function UsagePage() {
   }, [days]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load() sets state only after its await
     void load();
   }, [load]);
 

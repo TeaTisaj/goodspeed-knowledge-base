@@ -105,8 +105,8 @@ export class IngestionWorker implements OnModuleInit {
 
     const jobId = (jobRow as { id: string } | null)?.id;
 
-    // Each job gets its own usage bucket. The worker runs jobs concurrently,
-    // so a shared buffer would bill one owner for another's embeddings.
+    // Each job gets its own usage bucket, so one owner is never billed for
+    // another's embeddings.
     const usageEvents = this.ai.beginUsageScope();
 
     try {

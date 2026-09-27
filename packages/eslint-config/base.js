@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
 /** Shared flat config. Type-aware rules are opt-in per package via `projectService`. */
-export const base = tseslint.config(
+export default tseslint.config(
   {
     ignores: ['**/dist/**', '**/.next/**', '**/node_modules/**', '**/coverage/**', '**/*.d.ts'],
   },
@@ -25,5 +25,3 @@ export const base = tseslint.config(
   },
   prettier,
 );
-
-export default base;

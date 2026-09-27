@@ -1,10 +1,9 @@
+import nextVitals from 'eslint-config-next/core-web-vitals';
 import tseslint from 'typescript-eslint';
-import { base } from './base.js';
+import base from './base.js';
 
-export default tseslint.config(...base, {
-  files: ['**/*.{ts,tsx}'],
-  rules: {
-    // Next's App Router uses default exports for pages/layouts.
-    'import/no-default-export': 'off',
-  },
+/** Next's own rules (React, hooks, a11y, Core Web Vitals) on top of the shared base. */
+export default tseslint.config(...nextVitals, ...base, {
+  // eslint-plugin-react's version detection calls an API ESLint 10 removed.
+  settings: { react: { version: '19' } },
 });

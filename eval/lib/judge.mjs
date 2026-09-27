@@ -138,7 +138,7 @@ const SRC = [
  * one changed number, one plausible added cause -- because an obvious
  * hallucination proves nothing about a judge.
  */
-export const JUDGE_CALIBRATION = [
+const JUDGE_CALIBRATION = [
   {
     label: 'faithful paraphrase',
     faithful: true,

@@ -1,21 +1,11 @@
 /**
  * A deliberately small markdown renderer for answer text.
  *
- * Answers were rendered as `whitespace-pre-wrap`, so a model that produced
- * `**bold**` or a `-` list showed the raw characters. Documents are markdown,
- * the prompt asks for concise structured answers, and the model obliges — so
- * the UI was displaying syntax rather than formatting.
- *
- * Why not a library: the rendered text is model output, which makes this an
- * injection surface, and the subset worth supporting here is tiny. Every node
- * below is built from React elements, never from `dangerouslySetInnerHTML`, so
- * there is no HTML parsing step for a crafted answer to slip through. The one
- * safe-by-construction rule: input is treated as text, and structure comes only
- * from patterns this file recognises.
- *
- * Supported: headings, unordered and ordered lists, fenced code blocks, inline
- * code, bold, italics, and citation markers. Everything else renders as its
- * literal text, which is the right failure for a renderer this size.
+ * Not a library, because the input is model output and so an injection
+ * surface. Every node is a React element (no `dangerouslySetInnerHTML`), so
+ * text stays text and structure comes only from the patterns below: headings,
+ * lists, fenced code, inline code, bold, italics and citation markers. Links
+ * and images are intentionally unsupported; anything else renders literally.
  */
 
 import type { ReactNode } from 'react';
@@ -23,7 +13,7 @@ import type { ReactNode } from 'react';
 /** Renders citation `n`, or returns null to leave the marker as text. */
 export type RenderCitation = (n: number, key: string) => ReactNode | null;
 
-/** `**bold**`, `*italic*`, `` `code` ``, `[n]` — applied to already-escaped text. */
+/** `**bold**`, `*italic*`, `` `code` `` and `[n]` within one line. */
 function renderInline(text: string, keyPrefix: string, cite?: RenderCitation): ReactNode[] {
   const nodes: ReactNode[] = [];
   // One pass, alternating between the delimiters so nesting cannot desync.
@@ -62,6 +52,17 @@ function renderInline(text: string, keyPrefix: string, cite?: RenderCitation): R
 
   if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
   return nodes;
+}
+
+function codeBlock(lines: string[], key: string) {
+  return (
+    <pre
+      key={key}
+      className="overflow-x-auto rounded-md bg-[var(--color-surface-muted)] p-2 text-xs"
+    >
+      <code>{lines.join('\n')}</code>
+    </pre>
+  );
 }
 
 export function Markdown({
@@ -108,14 +109,7 @@ export function Markdown({
         flushList();
         codeLines = [];
       } else {
-        blocks.push(
-          <pre
-            key={`b${key++}`}
-            className="overflow-x-auto rounded-md bg-[var(--color-surface-muted)] p-2 text-xs"
-          >
-            <code>{codeLines.join('\n')}</code>
-          </pre>,
-        );
+        blocks.push(codeBlock(codeLines, `b${key++}`));
         codeLines = null;
       }
       continue;
@@ -163,14 +157,7 @@ export function Markdown({
   // An unterminated fence still has to render, or a streaming answer shows
   // nothing until its closing backticks arrive.
   if (codeLines !== null && codeLines.length > 0) {
-    blocks.push(
-      <pre
-        key={`b${key++}`}
-        className="overflow-x-auto rounded-md bg-[var(--color-surface-muted)] p-2 text-xs"
-      >
-        <code>{codeLines.join('\n')}</code>
-      </pre>,
-    );
+    blocks.push(codeBlock(codeLines, `b${key++}`));
   }
   flushList();
 

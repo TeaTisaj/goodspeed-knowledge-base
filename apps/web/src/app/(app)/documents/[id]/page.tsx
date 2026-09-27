@@ -50,6 +50,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   }, [id]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load() sets state only after its await
     void load();
   }, [load]);
 

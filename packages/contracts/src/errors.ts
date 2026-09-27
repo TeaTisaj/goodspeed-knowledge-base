@@ -16,7 +16,6 @@ export const errorCodeSchema = z.enum([
   'rate_limited',
   'provider_unavailable',
   'provider_timeout',
-  'ingestion_failed',
   'internal_error',
 ]);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;

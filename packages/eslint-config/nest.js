@@ -1,5 +1,5 @@
 import tseslint from 'typescript-eslint';
-import { base } from './base.js';
+import base from './base.js';
 
 /**
  * NestJS overrides.

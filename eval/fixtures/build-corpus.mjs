@@ -44,7 +44,7 @@ function renderDoc(doc) {
   return parts.join('\n\n');
 }
 
-export const DOCS = [
+const DOCS = [
   {
     id: 'runbook',
     title: 'Deployment runbook',

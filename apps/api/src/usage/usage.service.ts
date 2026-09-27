@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { estimateCostUsd, PRICING, type UsageEvent } from '@kb/ai';
+import { PRICING, type UsageEvent } from '@kb/ai';
 import type { AnswerQuality } from '@kb/contracts';
 import { AppError } from '../common/errors.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
@@ -95,13 +95,5 @@ export class UsageService {
   /** Exposed so the UI can explain why some rows show no cost. */
   get pricedModels(): string[] {
     return Object.keys(PRICING);
-  }
-
-  estimate(model: string, promptTokens: number, completionTokens: number): number {
-    return estimateCostUsd(model, {
-      promptTokens,
-      completionTokens,
-      totalTokens: promptTokens + completionTokens,
-    });
   }
 }

@@ -6,30 +6,16 @@ import { api } from '@/lib/api';
 import { AlertIcon } from './icons';
 
 /**
- * Says out loud when the app is running without a real AI provider.
- *
- * The app ships with a `fake` provider so it boots with no credentials, which
- * is a genuine strength -- a reviewer can clone, run one command and click
- * through everything. The failure mode is that the zero-key path *looks* like
- * a broken product rather than a deliberate offline one: answers come back as
- * three sentences lifted from the sources, and the only explanation is a
- * warning in the API's terminal, which nobody reading the UI will ever see.
- *
- * That is not a hypothetical. It is the first thing that happened to someone
- * running this, and they concluded the retrieval was bad. So the degradation
- * is stated where the answers are, in the words that describe what is actually
- * different, next to the one line that fixes it.
- *
- * Not dismissible. A banner explaining why output looks wrong is worth least
- * at exactly the moment someone clicks it away and keeps reading the output.
+ * Explains, where the answers are, when the app runs on the offline `fake`
+ * provider. Without it the zero-key demo looks like poor retrieval rather than
+ * a deliberate offline mode. Not dismissible: it matters most while someone is
+ * reading the output it explains.
  */
 export function ProviderBanner() {
   const [health, setHealth] = useState<Health | null>(null);
 
   useEffect(() => {
-    // A failed health check is not worth surfacing here: every authenticated
-    // call is about to fail too, with a better message than this component
-    // could give. Staying silent avoids two banners for one outage.
+    // Silent on failure: the page's own requests will fail with a better message.
     api.health().then(setHealth, () => undefined);
   }, []);
 

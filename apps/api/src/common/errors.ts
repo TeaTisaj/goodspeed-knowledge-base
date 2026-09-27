@@ -33,10 +33,6 @@ export class AppError extends HttpException {
     return new AppError('validation_failed', HttpStatus.BAD_REQUEST, message, fieldErrors);
   }
 
-  static conflict(message: string): AppError {
-    return new AppError('conflict', HttpStatus.CONFLICT, message);
-  }
-
   static internal(message = 'Something went wrong'): AppError {
     return new AppError('internal_error', HttpStatus.INTERNAL_SERVER_ERROR, message);
   }

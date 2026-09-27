@@ -10,9 +10,9 @@ for (const candidate of ['.env', '../../.env']) {
   }
 }
 
-export const SUPABASE_URL = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321';
-export const PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? '';
-export const SECRET_KEY = process.env.SUPABASE_SECRET_KEY ?? '';
+const SUPABASE_URL = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321';
+const PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? '';
+const SECRET_KEY = process.env.SUPABASE_SECRET_KEY ?? '';
 
 /** Service-role client. Bypasses RLS — used only to set up fixtures. */
 export function adminClient(): SupabaseClient {

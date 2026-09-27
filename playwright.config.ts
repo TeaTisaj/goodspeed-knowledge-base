@@ -30,13 +30,8 @@ export default defineConfig({
    * Starts the stack when it is not already up, so `pnpm test:e2e` works from a
    * clean clone instead of timing out against nothing.
    *
-   * Two entries, not one, because the API and the web app become ready at very
-   * different times: Next serves in under a second while `nest start` compiles
-   * for ten or more. Waiting only on port 3000 let the first test run against a
-   * web app whose API was still booting -- the documents page then rendered a
-   * fetch error instead of its empty state, and the failure looked like a UI
-   * bug. Each server is waited on at its own readiness URL; the API's is
-   * `/health`, which is what that endpoint is for.
+   * Two entries because the API compiles for several seconds after Next is
+   * already serving; each is awaited at its own readiness URL.
    *
    * Both go through turbo so the shared workspace packages are built first.
    */

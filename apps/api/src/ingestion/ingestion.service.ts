@@ -104,7 +104,9 @@ export class IngestionService {
     }
 
     if (diff.deletedIds.length > 0) {
-      await db.from('chunks').delete().in('id', diff.deletedIds);
+      const { error } = await db.from('chunks').delete().in('id', diff.deletedIds);
+      // A stale chunk left behind stays searchable, so this must fail the job.
+      if (error) throw new Error(`chunk delete failed: ${error.message}`);
     }
 
     // Renumber kept rows first, in one atomic call, so new rows do not collide.

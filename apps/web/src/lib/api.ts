@@ -46,6 +46,20 @@ async function authHeader(): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${token}` };
 }
 
+/** The server's problem details, or a stand-in when the body is not JSON (a proxy error page). */
+async function toApiError(
+  res: Response,
+  fallback: Pick<ProblemDetails, 'title' | 'code'>,
+): Promise<ApiError> {
+  let problem: ProblemDetails;
+  try {
+    problem = (await res.json()) as ProblemDetails;
+  } catch {
+    problem = { type: 'about:blank', status: res.status, ...fallback };
+  }
+  return new ApiError(problem, res.status);
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -57,18 +71,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   if (!res.ok) {
-    let problem: ProblemDetails;
-    try {
-      problem = (await res.json()) as ProblemDetails;
-    } catch {
-      problem = {
-        type: 'about:blank',
-        title: res.statusText || 'Request failed',
-        status: res.status,
-        code: 'internal_error',
-      };
-    }
-    throw new ApiError(problem, res.status);
+    throw await toApiError(res, {
+      title: res.statusText || 'Request failed',
+      code: 'internal_error',
+    });
   }
 
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
@@ -104,18 +110,10 @@ export const api = {
     });
 
     if (!res.ok) {
-      let problem: ProblemDetails;
-      try {
-        problem = (await res.json()) as ProblemDetails;
-      } catch {
-        problem = {
-          type: 'about:blank',
-          title: res.status === 413 ? 'That file is too large' : 'Upload failed',
-          status: res.status,
-          code: 'validation_failed',
-        };
-      }
-      throw new ApiError(problem, res.status);
+      throw await toApiError(res, {
+        title: res.status === 413 ? 'That file is too large' : 'Upload failed',
+        code: 'validation_failed',
+      });
     }
     return (await res.json()) as Document;
   },
@@ -160,18 +158,10 @@ export async function streamAsk(
   });
 
   if (!res.ok || !res.body) {
-    let problem: ProblemDetails;
-    try {
-      problem = (await res.json()) as ProblemDetails;
-    } catch {
-      problem = {
-        type: 'about:blank',
-        title: 'Could not start the answer stream',
-        status: res.status,
-        code: 'internal_error',
-      };
-    }
-    throw new ApiError(problem, res.status);
+    throw await toApiError(res, {
+      title: 'Could not start the answer stream',
+      code: 'internal_error',
+    });
   }
 
   const reader = res.body.getReader();

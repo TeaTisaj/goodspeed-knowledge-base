@@ -124,7 +124,7 @@ describe('streamEventSchema', () => {
 describe('problemDetailsSchema', () => {
   it('accepts an RFC 9457 payload with field errors', () => {
     const r = problemDetailsSchema.safeParse({
-      type: 'https://goodspeed.kb/errors/validation_failed',
+      type: '/errors/validation_failed',
       title: 'Validation failed',
       status: 400,
       code: 'validation_failed',

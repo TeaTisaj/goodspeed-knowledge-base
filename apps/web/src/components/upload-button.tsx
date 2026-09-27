@@ -6,7 +6,7 @@ import { ApiError, api } from '@/lib/api';
 import { UploadIcon } from './icons';
 import { Button } from './ui';
 
-export const ACCEPT = '.pdf,.txt,.md,application/pdf,text/plain,text/markdown';
+const ACCEPT = '.pdf,.txt,.md,application/pdf,text/plain,text/markdown';
 
 /**
  * File upload, shared by the button and the documents page's drop zone.

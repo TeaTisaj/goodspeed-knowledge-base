@@ -80,12 +80,8 @@ export class DocumentsController {
     body: UpdateDocumentInput,
   ): Promise<Document> {
     const doc = await this.documents.update(user.accessToken, id, body);
-    // Content and tags both reach the chunk rows: `chunks.tags` is denormalised
-    // from the document so the RLS-checked search functions can filter without a
-    // join. A tags-only edit that skipped this left the chunks carrying the old
-    // tags, and the document became invisible to a search filtered by its own
-    // new tag. Re-ingestion is cheap when nothing else changed -- the content
-    // hash matches, so `ingest()` returns before chunking (DECISIONS.md §8).
+    // Tags are copied onto chunks for filtering, so a tags-only edit re-ingests
+    // too. Unchanged content returns before chunking, so that costs one query.
     if (body.content !== undefined || body.tags !== undefined) {
       await this.queue.enqueueIngest({ documentId: doc.id, ownerId: user.id });
     }

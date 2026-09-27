@@ -21,7 +21,7 @@ const escapePdf = (s) => s.replace(/[\\()]/g, (c) => `\\${c}`);
  * Minimal single-page PDF 1.4. Each line is `{ text, hidden }`; hidden lines are
  * drawn in white (`1 1 1 rg`).
  */
-export function writePdf(lines) {
+function writePdf(lines) {
   const ops = ['BT', '/F1 12 Tf', '72 720 Td'];
   lines.forEach((line, i) => {
     if (i > 0) ops.push('0 -18 Td');
@@ -58,7 +58,7 @@ async function loadUnpdf() {
 }
 
 /** Extracts a PDF exactly as `UploadController` does. */
-export async function extractPdf(bytes, filename) {
+async function extractPdf(bytes, filename) {
   const { extractText: unpdfExtract, getDocumentProxy } = await loadUnpdf();
   return extractText(bytes, {
     mimeType: 'application/pdf',

@@ -40,7 +40,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private toProblem(exception: unknown): ProblemDetails {
     if (exception instanceof AppError) {
       return {
-        type: `https://goodspeed.kb/errors/${exception.code}`,
+        type: problemType(exception.code),
         title: exception.message,
         status: exception.getStatus(),
         code: exception.code,
@@ -55,7 +55,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         (errors[key] ??= []).push(issue.message);
       }
       return {
-        type: 'https://goodspeed.kb/errors/validation_failed',
+        type: problemType('validation_failed'),
         title: 'Validation failed',
         status: HttpStatus.BAD_REQUEST,
         code: 'validation_failed',
@@ -67,7 +67,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const { status, code } = mapProviderError(exception);
       this.logger.warn(`Provider ${exception.providerId} failed: ${exception.message}`);
       return {
-        type: `https://goodspeed.kb/errors/${code}`,
+        type: problemType(code),
         // The upstream vendor message is not shown to the user; it frequently
         // contains account and quota detail that is not theirs to see.
         title:
@@ -83,7 +83,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const status = exception.getStatus();
       const code = statusToCode(status);
       return {
-        type: `https://goodspeed.kb/errors/${code}`,
+        type: problemType(code),
         title: exception.message,
         status,
         code,
@@ -100,7 +100,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     ) {
       const code = statusToCode(httpError.status);
       return {
-        type: `https://goodspeed.kb/errors/${code}`,
+        type: problemType(code),
         title:
           httpError.status === HttpStatus.PAYLOAD_TOO_LARGE
             ? 'Request is too large'
@@ -112,12 +112,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     this.logger.error(`Unhandled: ${(exception as Error)?.message}`, (exception as Error)?.stack);
     return {
-      type: 'https://goodspeed.kb/errors/internal_error',
+      type: problemType('internal_error'),
       title: 'Something went wrong',
       status: HttpStatus.INTERNAL_SERVER_ERROR,
       code: 'internal_error',
     };
   }
+}
+
+/** RFC 9457 `type`: a URI reference per error code, mirrored by the `code` member for clients. */
+function problemType(code: ErrorCode): string {
+  return `/errors/${code}`;
 }
 
 function mapProviderError(e: AiProviderError): { status: number; code: ErrorCode } {

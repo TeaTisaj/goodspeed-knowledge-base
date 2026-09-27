@@ -18,11 +18,7 @@ import { CHAT_PRESETS, EMBEDDING_PRESETS } from '../src/presets.js';
  * **Only `LIVE_`-prefixed keys are imported.** That prefix, not the filename, is
  * what keeps the two concerns apart: the app reads `AI_CHAT_PROVIDER` and
  * `AI_CHAT_API_KEY`, so a `LIVE_GROQ_API_KEY` sitting anywhere cannot silently
- * point the running app at a metered provider. An earlier version of this
- * function refused to look at `.env` on the theory that it could, which was the
- * right instinct applied to the wrong mechanism -- it protected nothing the
- * prefix was not already protecting, and only made the suite ignore keys an
- * operator had reasonably put next to their other credentials.
+ * point the running app at a metered provider, whichever file it is in.
  *
  * Restricting the import also keeps the test process clean: loading a whole
  * `.env` would inject `DATABASE_URL`, `SUPABASE_*` and the app's own AI

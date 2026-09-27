@@ -62,12 +62,8 @@ jobs:
       - name: Start Supabase
         run: pnpm exec supabase start
 
-      # The integration tests read these from the environment. Locally they come
-      # from the .env that `pnpm bootstrap` writes, which is gitignored and so absent
-      # here -- without this step every client is built with an empty key and the
-      # suite fails with "supabaseKey is required" before touching a policy.
-      # Read back from the CLI rather than hard-coded, so a change in the local
-      # stack cannot leave CI asserting against stale credentials.
+      # Locally these come from the gitignored .env that `pnpm bootstrap` writes.
+      # Read back from the CLI rather than hard-coded, so they can't go stale.
       - name: Export Supabase credentials
         run: |
           eval "$(pnpm exec supabase status -o env | grep -E '^(API_URL|PUBLISHABLE_KEY|SECRET_KEY|DB_URL)=')"
@@ -106,10 +102,8 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
-      # `pnpm bootstrap` is the same command a reviewer runs. Using it here
-      # means CI fails when the documented setup path breaks -- which is how the
-      # missing apps/web/.env.local went unnoticed: nothing ever exercised a
-      # clean checkout, because every local run already had the file.
+      # `pnpm bootstrap` is the same command a reviewer runs, so CI fails when
+      # the documented setup path breaks on a clean checkout.
       - name: Bootstrap the stack
         run: pnpm bootstrap
 
