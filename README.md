@@ -3,7 +3,6 @@
 Write or upload documents, then ask questions about them. Answers come only from your own
 documents and cite the exact passage behind each claim.
 
-**Loom:** [App walkthrough](https://www.loom.com/share/adee0e20f6294bb79872174ac37021d8) · [How AI was used to build it](https://www.loom.com/share/5f8feb0f1e6f4515b74749ab01f40299)
 
 ## At a glance
 
